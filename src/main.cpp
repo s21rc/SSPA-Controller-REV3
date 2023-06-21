@@ -1,5 +1,4 @@
-/* test    
-                                                                                      */
+
 /*  Arduino Code (Version 3.0) for S21RC SSPA Controller REV3.0 PCB.                       */
 /*                                                                                          */
 /*  Created by Fazlay Rabby S21RC, JUNE, 2023.                                              */
@@ -171,7 +170,7 @@ bool PTT_status = false;
 bool TX_Enable = true;
 bool error_temp_status = false;
 bool antenna2_status = false;
-bool rotary_status = false;
+
 
 uint8_t last_display_lpf = 0;
 uint8_t last_lpf_relay = 0;
@@ -1510,9 +1509,9 @@ void trigger8()
   lpf_bank = 8;
 }
 
-/*
+
 // Antenna2 switch
-void trigger8()
+void trigger30()
 {
   if (antenna2_status == LOW)
   {
@@ -1526,7 +1525,7 @@ void trigger8()
     myNex.writeStr("t23.txt", "A");
     antenna2_status = LOW;
   }
-} */
+} 
 
 void trigger9() // Loading variables data to Setting page
 {               // x09
@@ -2284,7 +2283,7 @@ void setup()
   myNex.writeStr("Er1.txt", error_text);
   // if(debug) Serial.println("*** SETUP END ***");
 
-  //delay(2000);
+  // delay(2000);
 
   // band_selection();
 
