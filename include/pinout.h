@@ -32,8 +32,8 @@
 
 #define IN_REF A0
 #define IN_FWD A1
-#define VCC A2
-#define ID A3
+#define ID A2
+#define VCC A3
 #define ROTARY_POS A4
 #define NTC1 A5
 #define NTC2 A6

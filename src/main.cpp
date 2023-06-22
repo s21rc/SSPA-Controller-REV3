@@ -49,8 +49,8 @@ float last_temp_digi2 = 0.0;
 // NTC temp
 #define ntcbeta 3950 // for 10K 3950 NTC
 
-float adc_ntc1 = 0.0;
-float adc_ntc2 = 0.0;
+uint16_t adc_ntc1 = 0;
+uint16_t adc_ntc2 = 0;
 float res_ntc1 = 0.0;
 float res_ntc2 = 0.0;
 
@@ -120,19 +120,20 @@ uint8_t band8_status;
 
 uint8_t graph_maxSwr = 3;             // = 3; // Scale of the SWR for display
 unsigned long Temp_Refresh = 0;       //
-unsigned long Display_Refresh = 1000; // refresh Temp display every N mili sec, set as per your liking
-unsigned long Volt_Refresh = 2000;    // refresh V display every N mili sec, set as per your liking
-unsigned long ID_Refresh = 1000;      // refresh I display every N mili sec, set as per your liking
-unsigned long Effi_Refresh = 1000;    // refresh Efficiency display every N mili sec, set as per your liking
-unsigned long Power_Refresh = 250;
+unsigned long Display_Refresh = 500; // refresh Temp display every N mili sec, set as per your liking
+unsigned long Volt_Refresh = 500;    // refresh V display every N mili sec, set as per your liking
+unsigned long ID_Refresh = 500;      // refresh I display every N mili sec, set as per your liking
+unsigned long Effi_Refresh = 500;    // refresh Efficiency display every N mili sec, set as per your liking
+unsigned long Power_Refresh = 200;
 unsigned long Diag_Refresh = 200;
+unsigned long bandcalib_Refresh = 200;
 float ResV1 = 10000.00; // Set R1 of voltage devider
 float ResV2 = 470.00;   // Set R2 of voltage devider
 float ResP1 = 1800.00;  // Set R1 of voltage devider for power/swr input
 float ResP2 = 470.00;   // Set R2 of voltage devider for power/swr input
 int RL = 2530;          // Load Resistor at Current sensor
 
-uint8_t band_margin = 30; // around 90mV margin for change of voltage reference between SSPA and Radio
+uint8_t band_margin = 20; // around 90mV margin for change of voltage reference between SSPA and Radio
 
 float ref_ADC = (3.3096 / 1024); // Refrence is 3.3v for Teensy ADC
 
@@ -170,7 +171,7 @@ bool PTT_status = false;
 bool TX_Enable = true;
 bool error_temp_status = false;
 bool antenna2_status = false;
-
+bool mode_button_touch = false;
 
 uint8_t last_display_lpf = 0;
 uint8_t last_lpf_relay = 0;
@@ -189,6 +190,7 @@ unsigned long last_ID_Refresh = 0;
 unsigned long lastERequest = 0;
 unsigned long last_Display_Refresh = 0;
 unsigned long last_Diag_Refresh = 0;
+unsigned long last_bandcalib_Refresh = 0;
 
 char error_text[20] = "";
 uint8_t default_value = 0;
@@ -431,8 +433,8 @@ uint16_t band_rotary()
 }
 
 // Band Mapping from ROTARY to Band#
-uint8_t rotary2band(uint8_t band_rotary_adc)
-{
+uint8_t rotary2band(uint16_t band_rotary_adc)
+{  
   uint8_t band = 0;
   if (band_rotary_adc > (b1.rotary - band_margin) && band_rotary_adc < (b1.rotary + band_margin))
     band = 1;
@@ -643,13 +645,15 @@ float I_now()
   }
   currentI /= 10;
   currentI *= ref_ADC;
-  if (display_page == 2)
+  if (display_page == 4)
   {
+    return currentI;
+  } else {
     currentI /= RL;
     currentI *= 13000;
+    return currentI;
   }
 
-  return currentI;
 }
 
 /* ===  protection enable Function === */
@@ -1377,8 +1381,8 @@ void read_temp()
       */
 
       // show NTC output in milivolt
-      myNex.writeNum("dn0.val", adc_ntc1 * ref_ADC);
-      myNex.writeNum("dn1.val", adc_ntc2 * ref_ADC);
+      myNex.writeNum("dn0.val", adc_ntc1 * ref_ADC*1000);
+      myNex.writeNum("dn1.val", adc_ntc2 * ref_ADC*1000);
 
       // display Digital sensor output in degree C
       myNex.writeNum("dx0.val", Tdisplay3);
@@ -1404,57 +1408,69 @@ void band_selection()
     if (band_rotary() < 10)
     {
       if (band_mode == 1)
-      {
+      {// TOUCH
         LCDband_enable();
-        // TOUCH
         current_band = lpf2band(lpf_bank);
-        lpf(lpf_bank);
-        myNex.writeNum("bt0.val", 0);
-        myNex.writeNum("bt1.val", 0);
-        myNex.writeNum("bt2.val", 0);
-        myNex.writeNum("bt3.val", 1);
+        if (current_band != last_band){
+          lpf(lpf_bank);
+          last_band = current_band;
+        }
+
+        if (mode_button_touch != true){
+          myNex.writeNum("bt0.val", 0);
+          myNex.writeNum("bt1.val", 0);
+          myNex.writeNum("bt2.val", 0);
+          myNex.writeNum("bt3.val", 1);
+          mode_button_touch = true;
+        }
       }
 
       else if (band_mode == 2)
-      {
-        // BCD
+      {// BCD
         LCDband_disable();
         current_band = bcd2band(band_bcd());
-        lpf_bank = band2lpf(current_band);
-        lpf(lpf_bank);
-        myNex.writeNum("bt0.val", 0);
-        myNex.writeNum("bt1.val", 0);
-        myNex.writeNum("bt2.val", 1);
-        myNex.writeNum("bt3.val", 0);
+        if (current_band != last_band){
+          
+          lpf_bank = band2lpf(current_band);
+          lpf(lpf_bank);
+          myNex.writeNum("bt0.val", 0);
+          myNex.writeNum("bt1.val", 0);
+          myNex.writeNum("bt2.val", 1);
+          myNex.writeNum("bt3.val", 0);
+          last_band = current_band;
+        }
       }
       else if (band_mode == 3)
-      {
-        // BAND V
+      {// BAND V
         LCDband_disable();
         current_band = bandV2band(band_volt());
-        lpf_bank = band2lpf(current_band);
-        lpf(lpf_bank);
-        myNex.writeNum("bt0.val", 1);
-        myNex.writeNum("bt1.val", 0);
-        myNex.writeNum("bt2.val", 0);
-        myNex.writeNum("bt3.val", 0);
+        if (current_band != last_band){
+          
+          lpf_bank = band2lpf(current_band);
+          lpf(lpf_bank);
+          myNex.writeNum("bt0.val", 1);
+          myNex.writeNum("bt1.val", 0);
+          myNex.writeNum("bt2.val", 0);
+          myNex.writeNum("bt3.val", 0);
+          last_band = current_band;  
+        }
       }
     }
     else
     {
       // ROTARY
-      if (current_band != last_band)
-      {
-
-        LCDband_disable();
-        current_band = rotary2band(band_rotary());
+      LCDband_disable();
+      mode_button_touch = false;
+      current_band = rotary2band(band_rotary());
+      if (current_band != last_band){
+        
         lpf_bank = band2lpf(current_band);
         lpf(lpf_bank);
-        last_band = current_band;
         myNex.writeNum("bt0.val", 0);
         myNex.writeNum("bt1.val", 1);
         myNex.writeNum("bt2.val", 0);
         myNex.writeNum("bt3.val", 0);
+        last_band = current_band;
       }
     }
   }
@@ -1625,6 +1641,7 @@ void trigger14()
   b9.rotary = myNex.readNumber("n0.val");
   b10.rotary = myNex.readNumber("n27.val");
   b11.rotary = myNex.readNumber("n30.val");
+  saveEEPROM();
 }
 
 // APPLY button press for Band Volt data in Band Calibration page
@@ -2016,8 +2033,12 @@ void diagnos_page()
     */
 
     fanspeed(); // Set fan speed and display
-    myNex.writeNum("dn9.val", V_now() * ResV);
-    myNex.writeNum("dn9.val", I_now());
+    myNex.writeNum("dn9.val", V_now()*1000*ResV);
+    myNex.writeNum("dn10.val", I_now()*1000);
+
+    Serial.print("I:");
+    Serial.println(I_now());
+
 
     myNex.writeNum("dn11.val", band_rotary() * ref_ADC * 1000); // show Band voltage of rotary swith
     myNex.writeNum("dn12.val", band_volt() * ref_ADC * 1000);   // show auto Band Voltage in mv
@@ -2138,9 +2159,8 @@ void metercalib_page()
 }
 
 /* ======================= Band Calibration page data load ======================= */
-void bandcalib_page()
+void bandcalib_load()
 {
-
   // Load Rotary values from variable
   myNex.writeNum("n17.val", b1.rotary);
   myNex.writeNum("n18.val", b2.rotary);
@@ -2194,10 +2214,20 @@ void bandcalib_page()
   myNex.writeNum("n33.val", b11.lpf);
 }
 
+
+void bandcalib_page(){
+  if ((millis() - last_bandcalib_Refresh) >= bandcalib_Refresh){
+    myNex.writeNum("rot.val", band_rotary());
+    myNex.writeNum("volt.val", band_volt());
+    myNex.writeNum("bcd.val", band_bcd());
+    last_bandcalib_Refresh = millis();
+  }
+}
+
 void trigger13()
 { // x0D
   TX_Enable = false;
-  bandcalib_page();
+  bandcalib_load();
   display_page = 7;
 }
 
@@ -2349,7 +2379,7 @@ void loop()
   else if (display_page == 7)
   {
     // if(debug) Serial.println("*** BAND CALIB PAGE ***");
-    // bandcalib_page();
+    bandcalib_page();
   }
   else if (display_page == 8)
   {
