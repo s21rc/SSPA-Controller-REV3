@@ -70,6 +70,41 @@ volatile bool BIAS_ON_status = LOW;
 volatile bool ANT_RXTX_status = LOW;
 volatile bool PROT_OUT_status = LOW;
 
+
+
+uint8_t swr_display = 10; // swr x 10 showing in display
+
+// Structure for display power and SWR
+struct power
+{
+  float powerFWD; //power forward (watts)
+  float rawFWD; //power forward for SWR calculation
+  float PEAKpowerFWD; // power forward max (for peak hold)
+  float powerREF; //power reflected (watts)
+  float rawREF; //power reflected for SWR calculation
+  float PEAKpowerREF; // power reflected max (for peak hold)
+  float SWR;
+  float PEAKSWR;
+  float power_ratio;
+  uint8_t graphSWR;
+  uint8_t maxgraphSWR;
+  uint8_t swr_display;
+  uint16_t graph_Watt;
+  uint16_t maxGraphWatt;
+  float calibration;
+
+};
+
+power ANT;
+power LPF;
+power IN;
+
+unsigned long lastANTpep;
+unsigned long lastLPFpep;
+unsigned long lastINpep;
+
+
+
 /* ======= Variables to save seetings data in EEPROM ======= */
 // Structure for band related values
 struct band
@@ -127,6 +162,7 @@ unsigned long Effi_Refresh = 500;    // refresh Efficiency display every N mili 
 unsigned long Power_Refresh = 200;
 unsigned long Diag_Refresh = 200;
 unsigned long bandcalib_Refresh = 200;
+unsigned long metercalib_Refresh = 200;
 float ResV1 = 10000.00; // Set R1 of voltage devider
 float ResV2 = 470.00;   // Set R2 of voltage devider
 float ResP1 = 1800.00;  // Set R1 of voltage devider for power/swr input
@@ -135,25 +171,22 @@ int RL = 2530;          // Load Resistor at Current sensor
 
 uint8_t band_margin = 20; // around 90mV margin for change of voltage reference between SSPA and Radio
 
-float ref_ADC = (3.3096 / 1024); // Refrence is 3.3v for Teensy ADC
+float ref_ADC = (3.30 / 1024); // Refrence is 3.3v for Teensy ADC
 
 // Calibration factors
 uint16_t measured_power_out;
 uint16_t measured_power_in;
 
 float VFdiode = 0.3; //
-float VFdiode_ADC = VFdiode / ref_ADC;
 
-int calibration_out;
-int calibration_in;
+float maxCalibV_out;
+float CalibV_out;
+float maxCalibV_in;
+float CalibV_in;
 
-uint16_t ADC_calibration_out;
-uint16_t ADC_calibration_in;
-uint16_t ADC_maxCalibV_out;
-uint16_t ADC_maxCalibV_in;
 
 bool calibpage_load = false;
-uint8_t last_calib_band = 0;
+uint8_t last_calib_band = 99;
 uint16_t last_calib_out = 0;
 uint16_t last_calib_in = 0;
 
@@ -191,6 +224,7 @@ unsigned long lastERequest = 0;
 unsigned long last_Display_Refresh = 0;
 unsigned long last_Diag_Refresh = 0;
 unsigned long last_bandcalib_Refresh = 0;
+unsigned long last_metercalib_Refresh = 0;
 
 char error_text[20] = "";
 uint8_t default_value = 0;
@@ -205,49 +239,17 @@ float ResV = ResV2 / (ResV1 + ResV2);
 uint8_t I;
 uint8_t lastI = 0;
 
-uint8_t graph_Watt = 0;
+uint8_t graph_watt = 0;
 uint8_t graph_Temp1 = 0;
 uint8_t graph_Temp2 = 0;
 uint8_t graph_Temp3 = 0;
 uint8_t graph_Temp4 = 0;
 
-uint8_t graph_Swr = 0;
-uint8_t graph_Swr_ANT = 0;
-uint8_t graph_Swr_IN = 0;
 
 /* ======== power and swr related variable ======== */
 
 float ResP = ResP2 / (ResP1 + ResP2); // Voltage devider for SWR/POWER/LPF
-unsigned int lastANTpep = 0;          // update PEP display
-unsigned int lastLPFpep = 0;          // update PEP display LPF
-unsigned int lastINpep = 0;           // update PEP display LPF
 
-unsigned int ant_power_fwd = 0; // ANT power forward (watts)
-unsigned int ant_power_ref = 0; // ANT power reflected (watts)
-float ant_raw_fwd = 0;          // ANT power forward for SWR calculation
-float ant_raw_ref = 0;          // ANT power reflected for SWR calculation
-uint16_t ant_power_fwd_max = 0; // power forward max (for peak hold)
-uint16_t ant_power_ref_max = 0; // power reflected max (for peak hold)
-
-unsigned int lpf_power_fwd = 0; // LPF power forward (watts)
-unsigned int lpf_power_ref = 0; // LPF power reflected (watts)
-float lpf_raw_fwd = 0;          // LPF power forward for SWR calculation
-float lpf_raw_ref = 0;          // LPF power reflected for SWR calculation
-uint16_t lpf_power_fwd_max = 0; // power forward max (for peak hold)
-uint16_t lpf_power_ref_max = 0; // power reflected max (for peak hold)
-
-unsigned int in_power_fwd = 0; // LPF power forward (watts)
-unsigned int in_power_ref = 0; // LPF power reflected (watts)
-float in_raw_fwd = 0;          // LPF power forward for SWR calculation
-float in_raw_ref = 0;          // LPF power reflected for SWR calculation
-uint16_t in_power_fwd_max = 0; // power forward max (for peak hold)
-uint16_t in_power_ref_max = 0; // power reflected max (for peak hold)
-
-float ANT_SWR = 0;        // ANT_SWR
-float LPF_SWR = 0;        // LPF_SWR
-float IN_SWR = 0;         // Input_SWR
-float power_ratio = 0;    // Power ratio P forward / P refl
-uint8_t swr_display = 10; // swr x 10 showing in display
 
 /* === PWM Function === */
 int PWM = 0;
@@ -463,15 +465,15 @@ uint8_t rotary2band(uint16_t band_rotary_adc)
 
 void loadEEPROM()
 {
-  EEPROM.get(1, ADC_calibration_out);
-  EEPROM.get(3, ADC_calibration_in);
-  EEPROM.get(5, measured_power_out);
-  EEPROM.get(7, measured_power_in);
-  EEPROM.get(9, calibration_ID);
-  EEPROM.get(13, calibration_out);
-  EEPROM.get(17, calibration_in);
+  EEPROM.get(500, CalibV_out);
+  EEPROM.get(504, CalibV_in);
+  EEPROM.get(508, measured_power_out);
+  EEPROM.get(512, measured_power_in);
+  EEPROM.get(516, calibration_ID);
+  EEPROM.get(520, ANT.calibration);
+  EEPROM.get(524, IN.calibration);
 
-  EEPROM.get(21, graph_maxWatt);
+  EEPROM.get(21, ANT.maxGraphWatt);
   EEPROM.get(25, graph_maxTemp);
   EEPROM.get(30, protection_po);
   EEPROM.get(35, protection_swr);
@@ -511,15 +513,15 @@ void loadEEPROM()
 void saveEEPROM()
 {
 
-  EEPROM.put(1, ADC_calibration_out);
-  EEPROM.put(3, ADC_calibration_in);
-  EEPROM.put(5, measured_power_out);
-  EEPROM.put(7, measured_power_in);
-  EEPROM.put(9, calibration_ID);
-  EEPROM.put(13, calibration_out);
-  EEPROM.put(17, calibration_in);
+  EEPROM.put(500, CalibV_out);
+  EEPROM.put(504, CalibV_in);
+  EEPROM.put(508, measured_power_out);
+  EEPROM.put(512, measured_power_in);
+  EEPROM.put(516, calibration_ID);
+  EEPROM.put(520, ANT.calibration);
+  EEPROM.put(524, IN.calibration);
 
-  EEPROM.put(21, graph_maxWatt);
+  EEPROM.put(21, ANT.maxGraphWatt);
   EEPROM.put(25, graph_maxTemp);
   EEPROM.put(30, protection_po);
   EEPROM.put(35, protection_swr);
@@ -689,13 +691,19 @@ float V_now()
 
 float ant_fwd_now()
 {
-  float ANTFWD = 0.0;
+  float ANTFWD = 0;
+
   for (uint8_t i = 0; i < 10; i++)
   {
     ANTFWD += analogRead(ANT_FWD);
+    
   }
   ANTFWD = ANTFWD / 10;
+  Serial.print("ANT FW ADC: ");
+  Serial.println(ANTFWD);
   ANTFWD = ((ANTFWD * ref_ADC) / ResP) + VFdiode;
+  Serial.print("ANT FW V: ");
+  Serial.println(ANTFWD);
   return ANTFWD;
 }
 
@@ -719,12 +727,12 @@ float lpf_fwd_now()
     LPFFWD += analogRead(LPF_FWD);
   }
   LPFFWD = LPFFWD / 10;
-  LPFFWD = ((LPFFWD * ref_ADC) / ResP) + VFdiode;
-  if (debug)
-  {
-    Serial.println("LPFFWD:");
+    Serial.print("LPF FWD ADC: ");
     Serial.println(LPFFWD);
-  }
+    LPFFWD = ((LPFFWD * ref_ADC) / ResP) + VFdiode;
+    Serial.print("LPF FWD V: ");
+    Serial.println(LPFFWD);
+  
   return LPFFWD;
 }
 
@@ -785,108 +793,110 @@ void read_ANTpower()
   float Veff = V_now();
   float Iprot = I_now();
 
-  ant_raw_fwd = ant_fwd_now();
-  ant_raw_ref = ant_ref_now();
-
+  ANT.rawFWD = ant_fwd_now();
+  ANT.rawREF = ant_ref_now();
+  
+  
+  
   // Calculate Forward power
-  if (ant_raw_fwd > VFdiode)
+  if (ANT.rawFWD > VFdiode)
   { // only correct for diode voltage when more than zero
-    ant_power_fwd = (ant_raw_fwd * ant_raw_fwd) / calibration_out;
+    ANT.powerFWD = (ANT.rawFWD * ANT.rawFWD) / ANT.calibration;
   }
   else
-    ant_power_fwd = 0;
+    ANT.powerFWD = 0;
 
   // Calculate Reflected power
-  if (ant_raw_ref > VFdiode)
+  if (ANT.rawREF > VFdiode)
   {
-    ant_power_ref = (ant_power_ref * ant_power_ref) / calibration_out;
+    ANT.powerREF = (ANT.powerREF * ANT.powerREF) / ANT.calibration;
   }
   else
-    ant_power_ref = 0;
+    ANT.powerREF = 0;
 
   // Calculate SWR
-  if (ant_power_ref > 0 && !ant_power_fwd == 0)
+  if (ANT.powerREF > 0 && !ANT.powerFWD == 0)
   {
-    power_ratio = ant_power_fwd / ant_power_ref;
-    ANT_SWR = abs((1 + sqrt(power_ratio)) / (1 - sqrt(power_ratio)));
+    ANT.power_ratio = ANT.powerFWD / ANT.powerREF;
+    ANT.SWR = abs((1 + sqrt(ANT.power_ratio)) / (1 - sqrt(ANT.power_ratio)));
   }
   else
-    ANT_SWR = 1;
+    ANT.SWR = 1;
 
   /* === Check if OUTPUT is higher than set value  === */
-  if (ant_power_fwd >= protection_po)
+  if (ANT.powerFWD >= protection_po)
   {
     soft_protection();
     alarm_code = 6;
   }
 
   /* === Check if SWR is higher than set value  === */
-  if (ANT_SWR >= protection_swr)
+  if (ANT.SWR >= protection_swr)
   {
     soft_protection();
     alarm_code = 7;
   }
 
   /* === Check current vs Output Power to see if LPF mismatch  === */
-  if (Iprot >= 10.0 && ant_power_fwd <= 100)
+  if (Iprot >= 10.0 && ANT.powerFWD <= 100)
   {
     soft_protection();
     alarm_code = 8;
   }
 
   // hold peak
-  if (ant_power_fwd >= ant_power_fwd_max)
+  if (ANT.powerFWD >= ANT.PEAKpowerFWD)
   {
     lastANTpep = millis();
-    ant_power_fwd_max = ant_power_fwd;
+    ANT.PEAKpowerFWD = ANT.powerFWD;
   }
 
   if (millis() > (lastANTpep + T_pepHOLD))
-    ant_power_fwd_max = ant_power_fwd; // clear the peak after hold time
+    ANT.PEAKpowerFWD = ANT.powerFWD; // clear the peak after hold time
   // Efficiency calculation
   if (Veff != 0 && Iprot != 0)
-    Eff = 100 * (ant_power_fwd / (Veff * Iprot));
+    Eff = 100 * (ANT.powerFWD / (Veff * Iprot));
 }
 
 void read_LPFpower()
 {
 
-  lpf_raw_fwd = lpf_fwd_now();
-  lpf_raw_ref = lpf_ref_now();
+  LPF.rawFWD = lpf_fwd_now();
+  LPF.rawREF = lpf_ref_now();
 
   // Calculate Forward power
-  if (lpf_raw_fwd > VFdiode)
+  if (LPF.rawFWD > VFdiode)
   { // only correct for diode voltage when more than zero
-    lpf_power_fwd = (lpf_raw_fwd * lpf_raw_fwd) / calibration_out;
+    LPF.powerFWD = (LPF.rawFWD * LPF.rawFWD) / ANT.calibration;
   }
   else
-    lpf_power_fwd = 0;
+    LPF.powerFWD = 0;
 
   // Calculate Reflected power
-  if (lpf_raw_ref > VFdiode)
+  if (LPF.rawREF > VFdiode)
   { // only correct for diode voltage when more than zero
-    lpf_power_ref = (lpf_power_ref * lpf_power_ref) / calibration_out;
+    LPF.powerREF = (LPF.powerREF * LPF.powerREF) / ANT.calibration;
   }
   else
-    lpf_power_ref = 0;
+    LPF.powerREF = 0;
 
   // Calculate SWR
-  if (lpf_power_ref > 0 && !lpf_power_fwd == 0)
+  if (LPF.powerREF > 0 && !LPF.powerFWD == 0)
   {
-    power_ratio = lpf_power_fwd / lpf_power_ref;
-    LPF_SWR = abs((1 + sqrt(power_ratio)) / (1 - sqrt(power_ratio)));
+    LPF.power_ratio = LPF.powerFWD / LPF.powerREF;
+    LPF.SWR = abs((1 + sqrt(LPF.power_ratio)) / (1 - sqrt(LPF.power_ratio)));
   }
   else
-    LPF_SWR = 1;
+    LPF.SWR = 1;
 
   /* === Check if OUTPUT is higher than set value  === */
-  if (lpf_power_fwd >= protection_po)
+  if (LPF.powerFWD >= protection_po)
   {
     if (debug)
     {
       Serial.println("Alarm 9 Prot PO");
-      Serial.println(calibration_out);
-      Serial.println(lpf_power_fwd);
+      Serial.println(ANT.calibration);
+      Serial.println(LPF.powerFWD);
       Serial.println(protection_po);
     }
     soft_protection();
@@ -894,74 +904,93 @@ void read_LPFpower()
   }
 
   /* === Check if SWR is higher than set value  === */
-  if (LPF_SWR >= protection_swr)
+  if (LPF.SWR >= protection_swr)
   {
     soft_protection();
     alarm_code = 10;
   }
 
   // hold peak
-  if (lpf_power_fwd >= lpf_power_fwd_max)
+  if (LPF.powerFWD >= LPF.PEAKpowerFWD)
   {
     lastLPFpep = millis();
-    lpf_power_fwd_max = lpf_power_fwd;
+    LPF.PEAKpowerFWD = LPF.powerFWD;
   }
 
   if (millis() > (lastLPFpep + T_pepHOLD))
-    lpf_power_fwd_max = lpf_power_fwd; // clear the peak after hold time
+    LPF.PEAKpowerFWD = LPF.powerFWD; // clear the peak after hold time
 }
 
 void read_INpower()
 {
 
-  in_raw_fwd = in_fwd_now();
-  in_raw_ref = in_ref_now();
+  IN.rawFWD = in_fwd_now();
+  IN.rawREF = in_ref_now();
 
   // Calculate Forward power
-  if (in_raw_fwd > VFdiode)
+  if (IN.rawFWD > VFdiode)
   { // only correct for diode voltage when more than zero
-    in_power_fwd = (in_raw_fwd * in_raw_fwd) / calibration_in;
+    IN.powerFWD= (IN.rawFWD * IN.rawFWD) / IN.calibration;
   }
   else
-    in_power_fwd = 0;
+    IN.powerFWD= 0;
 
   // Calculate Reflected power
-  if (in_raw_ref > VFdiode)
+  if (IN.rawREF > VFdiode)
   {
-    in_power_ref = (in_power_ref * in_power_ref) / calibration_in;
+    IN.powerREF = (IN.powerREF * IN.powerREF) / IN.calibration;
   }
   else
-    in_power_ref = 0;
+    IN.powerREF = 0;
 
   // Calculate SWR
-  if (in_power_ref > 0 && !in_power_fwd == 0)
+  if (IN.powerREF > 0 && !IN.powerFWD== 0)
   {
-    power_ratio = in_power_fwd / in_power_ref;
-    IN_SWR = abs((1 + sqrt(power_ratio)) / (1 - sqrt(power_ratio)));
+    IN.power_ratio = IN.powerFWD/ IN.powerREF;
+    IN.SWR = abs((1 + sqrt(IN.power_ratio)) / (1 - sqrt(IN.power_ratio)));
   }
   else
-    IN_SWR = 1;
+    IN.SWR = 1;
 
   /* === Check if OUTPUT is higher than set value  === */
 
-  if (in_power_fwd >= protection_in)
+  if (IN.powerFWD>= protection_in)
   {
     soft_protection();
     alarm_code = 11;
   }
   // hold peak
-  if (in_power_fwd >= in_power_fwd_max)
+  if (IN.powerFWD>= IN.PEAKpowerFWD)
   {
     lastINpep = millis();
-    in_power_fwd_max = in_power_fwd;
+    IN.PEAKpowerFWD = IN.powerFWD;
   }
 
   if (millis() > (lastINpep + T_pepHOLD))
-    in_power_fwd_max = in_power_fwd; // clear the peak after hold time
+    IN.PEAKpowerFWD = IN.powerFWD; // clear the peak after hold time
 }
 
 /* === SWR/Po display Function === */
 // Refresh screen every N miliseconds (N = PdelayInMillis)
+void update_display(){
+      myNex.writeNum("n0.val", ANT.PEAKpowerFWD);
+      myNex.writeNum("n1.val", ANT.powerFWD);
+      myNex.writeNum("n2.val", IN.powerFWD);
+      myNex.writeNum("n3.val", ANT.powerFWD);
+      myNex.writeNum("n4.val", ANT.powerREF);
+      myNex.writeNum("n5.val", LPF.powerFWD);
+      myNex.writeNum("n6.val", LPF.powerREF);
+      myNex.writeNum("n7.val", Eff);
+
+      myNex.writeNum("x1.val", ANT.swr_display);
+      myNex.writeNum("x2.val", IN.swr_display);
+      
+      myNex.writeNum("j0.val", ANT.graph_Watt);
+      myNex.writeNum("j1.val", ANT.graphSWR);
+      myNex.writeNum("j2.val", IN.graph_Watt);
+      myNex.writeNum("j3.val", IN.graphSWR);
+      }
+
 void display_power(bool active)
 {
 
@@ -969,33 +998,50 @@ void display_power(bool active)
   {
     if ((millis() - last_Power_Refresh) >= Power_Refresh)
     {
-
-      swr_display = (ANT_SWR * 10) + 0.5; //// Float x 10 and convert to int with rounding
+      swr_display = (ANT.SWR * 10) + 0.5; //// Float x 10 and convert to int with rounding
       if (swr_display < 10)
         swr_display = 10; // SWR cannot be lower than 1.0
 
-      float graph_limit_watt = (graph_maxWatt / 100.00);
-      graph_Watt = (ant_power_fwd_max / graph_limit_watt);
+      IN.swr_display = (IN.SWR * 10) + 0.5; //// Float x 10 and convert to int with rounding
+      if (IN.swr_display < 10)
+        IN.swr_display = 10; // SWR cannot be lower than 1.0
 
-      float graph_limit_swr = ((graph_maxSwr - 1) / 100.00);
-      float swr_forgraph = ANT_SWR - 1;
-      graph_Swr = swr_forgraph / graph_limit_swr;
 
-      myNex.writeNum("n1.val", ant_power_fwd);
-      myNex.writeNum("n0.val", ant_power_fwd_max);
-      myNex.writeNum("j0.val", graph_Watt);
-      myNex.writeNum("x1.val", swr_display);
-      myNex.writeNum("j1.val", graph_Swr);
-      myNex.writeNum("n3.val", ant_power_fwd);
-      myNex.writeNum("n4.val", ant_power_ref);
-      myNex.writeNum("n5.val", lpf_power_fwd);
-      myNex.writeNum("n6.val", lpf_power_ref);
-      myNex.writeNum("n7.val", Eff);
+      float graph_limit_watt = (ANT.maxGraphWatt / 100.00);
+      ANT.graph_Watt = (ANT.PEAKpowerFWD / graph_limit_watt);
+      Serial.print("=========================================================GRAPH Limit WATT % ");
+      Serial.println(ANT.maxGraphWatt);
 
-      ant_power_fwd_max = 0;
-      graph_Watt = 0;
-      swr_display = 10;
-      graph_Swr = 0;
+      float graph_limit_swr = ((ANT.maxgraphSWR - 1) / 100.00);
+      float swr_forgraph = ANT.SWR - 1;
+      ANT.graphSWR = swr_forgraph / graph_limit_swr;
+
+
+      IN.graph_Watt = IN.PEAKpowerFWD;
+
+      ///float graph_limit_swr = ((graph_maxSwr - 1) / 100.00);
+      float in_swr_forgraph = IN.SWR - 1;
+      IN.graphSWR = in_swr_forgraph;
+
+      update_display();
+     
+      ANT.powerFWD = 0;
+      ANT.PEAKpowerFWD = 0;
+      ANT.graph_Watt = 0;
+      ANT.swr_display = 10;
+      ANT.graphSWR = 0;
+
+      LPF.powerFWD = 0;
+      LPF.graph_Watt = 0;
+      LPF.swr_display = 10;
+      LPF.graphSWR = 0;
+
+      IN.powerFWD = 0;
+      IN.PEAKpowerFWD = 0;
+      IN.graph_Watt = 0;
+      IN.swr_display = 10;
+      IN.graphSWR = 0;
+
       Eff = 0;
 
       last_Power_Refresh = millis();
@@ -1005,17 +1051,27 @@ void display_power(bool active)
   {
     if ((millis() - last_Power_Refresh) >= Power_Refresh)
     {
-      ant_power_fwd_max = 0;
-      graph_Watt = 0;
-      swr_display = 10;
-      graph_Swr = 0;
-      Eff = 0;
+      ANT.powerFWD = 0;
+      ANT.PEAKpowerFWD = 0;
+      ANT.graph_Watt = 0;
+      ANT.swr_display = 10;
+      ANT.graphSWR = 0;
 
-      myNex.writeNum("n0.val", ant_power_fwd_max);
-      myNex.writeNum("j0.val", graph_Watt);
-      myNex.writeNum("x1.val", swr_display);
-      myNex.writeNum("j1.val", graph_Swr);
-      myNex.writeNum("n7.val", Eff);
+      LPF.powerFWD = 0;
+      LPF.graph_Watt = 0;
+      LPF.swr_display = 10;
+      LPF.graphSWR = 0;
+
+      IN.powerFWD = 0;
+      IN.PEAKpowerFWD = 0;
+      IN.graph_Watt = 0;
+      IN.swr_display = 10;
+      IN.graphSWR = 0;
+
+      Eff = 0;
+      
+      update_display();
+      
       last_Power_Refresh = millis();
     }
   }
@@ -1547,7 +1603,7 @@ void trigger9() // Loading variables data to Setting page
 {               // x09
   TX_Enable = false;
 
-  myNex.writeNum("st0.val", graph_maxWatt);
+  myNex.writeNum("st0.val", ANT.maxGraphWatt);
   myNex.writeNum("st1.val", T_pepHOLD);
   myNex.writeNum("st7.val", graph_maxTemp);
   myNex.writeNum("st8.val", PWM_FREQ_KHZ);
@@ -1577,7 +1633,7 @@ void trigger9() // Loading variables data to Setting page
 void trigger10() // updating variables data from Setting page and EEPROM
 {                // x0A
 
-  graph_maxWatt = myNex.readNumber("st0.val");
+  ANT.maxGraphWatt = myNex.readNumber("st0.val");
   T_pepHOLD = myNex.readNumber("st1.val");
   graph_maxTemp = myNex.readNumber("st7.val");
   PWM_FREQ_KHZ = myNex.readNumber("st8.val");
@@ -1721,10 +1777,11 @@ void trigger20()
 void trigger22()
 {
   // x16
+  CalibV_in = myNex.readNumber("mcn0.val");
+  CalibV_in = CalibV_in/1000;
   measured_power_in = myNex.readNumber("mcn1.val");
-  calibration_in = ADC_calibration_in + VFdiode_ADC;
-  calibration_in = calibration_in * calibration_in;
-  calibration_in = calibration_in / measured_power_in;
+  IN.calibration = CalibV_in * CalibV_in;
+  IN.calibration = IN.calibration / measured_power_in;
   saveEEPROM();
 }
 
@@ -1732,10 +1789,11 @@ void trigger22()
 void trigger23()
 {
   // x17
+  CalibV_out = myNex.readNumber("mcn3.val");
+  CalibV_out = CalibV_out/1000;
   measured_power_out = myNex.readNumber("mcn4.val");
-  calibration_out = ADC_calibration_out + VFdiode_ADC;
-  calibration_out = calibration_out * calibration_out;
-  calibration_out = calibration_out / measured_power_out;
+  ANT.calibration = CalibV_out * CalibV_out;
+  ANT.calibration = ANT.calibration / measured_power_out;
   saveEEPROM();
 }
 
@@ -1784,10 +1842,10 @@ void default_write()
 {
   current_lpf = 1;
   current_band = 1;
-  calibration_out = 1;
-  calibration_in = 1;
-  ADC_calibration_out = 900;
-  ADC_calibration_in = 100;
+  ANT.calibration = 1;
+  IN.calibration = 1;
+  //ADC_ANT.calibration = 900;
+  //ADC_IN.calibration = 100;
   measured_power_out = 900;
   measured_power_in = 100;
   calibration_ID = 1.0;
@@ -2000,6 +2058,7 @@ void homepage_alarmrun()
 void menu_page()
 {
   // nothing to do in this page
+  calibpage_load = false;
 }
 
 void diagnos_page()
@@ -2014,23 +2073,15 @@ void diagnos_page()
     read_LPFpower(); // Read Po and SWR of LPF SWR Bridge
     read_INpower();  // Read Po and SWR of input SWR Bridge
 
-    // Show in mV at controller input, to see ADC values please comment this section and use next one below
-    myNex.writeNum("dn2.val", ant_raw_fwd * ref_ADC * 1000);
-    myNex.writeNum("dn3.val", ant_raw_ref * ref_ADC * 1000);
-    myNex.writeNum("dn4.val", lpf_raw_fwd * ref_ADC * 1000);
-    myNex.writeNum("dn5.val", lpf_raw_ref * ref_ADC * 1000);
-    myNex.writeNum("dn6.val", in_raw_fwd * ref_ADC * 1000);
-    myNex.writeNum("dn7.val", in_raw_ref * ref_ADC * 1000);
+    // Show in mV at controller input,
+    myNex.writeNum("dn2.val", (ANT.rawFWD - VFdiode)*1000);
+    myNex.writeNum("dn3.val", (ANT.rawREF - VFdiode)*1000);
+    myNex.writeNum("dn4.val", (LPF.rawFWD - VFdiode)*1000);
+    myNex.writeNum("dn5.val", (LPF.rawREF  - VFdiode)*1000);
+    myNex.writeNum("dn6.val", (IN.rawFWD - VFdiode)*1000);
+    myNex.writeNum("dn7.val", (IN.rawREF - VFdiode)*1000);
 
-    /*
-    // Show ADC values of controller input
-    myNex.writeNum("dn2.val", ant_raw_fwd);
-    myNex.writeNum("dn3.val", ant_raw_ref);
-    myNex.writeNum("dn4.val", lpf_raw_fwd);
-    myNex.writeNum("dn5.val", lpf_raw_ref);
-    myNex.writeNum("dn6.val", in_raw_fwd);
-    myNex.writeNum("dn7.val", in_raw_ref);
-    */
+    
 
     fanspeed(); // Set fan speed and display
     myNex.writeNum("dn9.val", V_now()*1000*ResV);
@@ -2102,62 +2153,79 @@ void settings_page()
 
 void metercalib_page()
 {
-  if (calibpage_load == false)
-  {
-    myNex.writeNum("msn3.val", ADC_calibration_out);
-    myNex.writeNum("msn4.val", measured_power_out);
-
-    myNex.writeNum("msn0.val", ADC_calibration_in);
-    myNex.writeNum("msn1.val", measured_power_in);
-    calibpage_load = true;
-  }
-
-  band_selection();
-  if (last_calib_band != current_band)
-  {
-    myNex.writeNum("n12.val", current_band);
-    myNex.writeNum("n6.val", current_lpf);
-    last_calib_band = current_band;
-  }
-
-  tx_sequence();
-
-  if (PTT_status)
-  {
-    ADC_maxCalibV_out = ant_fwd_now() / ref_ADC;
-    ADC_maxCalibV_in = in_fwd_now() / ref_ADC;
-
-    if (ADC_maxCalibV_out > ADC_calibration_out)
-      ADC_calibration_out = ADC_maxCalibV_out;
-
-    if (ADC_maxCalibV_in > ADC_calibration_in)
-      ADC_calibration_in = ADC_maxCalibV_in;
-
-    if (last_calib_out != ADC_calibration_out)
+  if ((millis() - last_metercalib_Refresh) >= metercalib_Refresh){
+  
+    if (calibpage_load == false)
     {
-      myNex.writeNum("mcn3.val", ADC_calibration_out);
-      last_calib_out = ADC_calibration_out;
+      myNex.writeNum("mcn3.val", CalibV_out*1000);
+      myNex.writeNum("mcn4.val", measured_power_out);
+
+      myNex.writeNum("mcn0.val", CalibV_in*1000);
+      myNex.writeNum("mcn1.val", measured_power_in);
+      calibpage_load = true;
     }
-    if (last_calib_in != ADC_calibration_in)
+
+    band_selection();
+    if (last_calib_band != current_band)
     {
-      myNex.writeNum("mcn0.val", ADC_calibration_in);
-      last_calib_in = ADC_calibration_in;
+      myNex.writeNum("n12.val", current_band);
+      myNex.writeNum("n6.val", current_lpf);
+    
+      last_calib_band = current_band;
     }
+
+    tx_sequence();
+
+    if (PTT_status)
+    { 
+        
+      CalibV_out = myNex.readNumber("mcn3.val");
+      CalibV_out = CalibV_out/1000;
+      CalibV_in = myNex.readNumber("mcn0.val");
+      CalibV_in = CalibV_in/1000;
+
+      maxCalibV_out = ant_fwd_now();
+      maxCalibV_in = in_fwd_now();
+     
+
+      if (maxCalibV_out > CalibV_out)
+        CalibV_out = maxCalibV_out;
+
+      if (maxCalibV_in > CalibV_in)
+        CalibV_in = maxCalibV_in;
+
+      if (last_calib_out != CalibV_out)
+      {
+        myNex.writeNum("mcn3.val", CalibV_out*1000);
+        last_calib_out = CalibV_out;
+      }
+    
+    if (last_calib_in != CalibV_in)
+      {
+        myNex.writeNum("mcn0.val", CalibV_in*1000);
+        last_calib_in = CalibV_in;
+      }
+    
+      peak_ID = myNex.readNumber("mcn6.val");
+      
+      calib_ID = I_now() * 1000;
+      if (calib_ID > peak_ID)
+        peak_ID = calib_ID;
+
+      if (last_peak_ID != peak_ID)
+      {
+        myNex.writeNum("mcn6.val", peak_ID);
+        last_peak_ID = peak_ID;
+      }
+    
+      }
+
+    last_metercalib_Refresh = millis();
+
+    //delay(50);
+
   }
-
-  calib_ID = I_now() * 1000;
-  if (calib_ID > peak_ID)
-    peak_ID = calib_ID;
-
-  if (last_peak_ID != peak_ID)
-  {
-    myNex.writeNum("mcn6.val", peak_ID);
-    last_peak_ID = peak_ID;
-  }
-
-  delay(50);
 }
-
 /* ======================= Band Calibration page data load ======================= */
 void bandcalib_load()
 {
@@ -2374,6 +2442,7 @@ void loop()
   else if (display_page == 6)
   {
     // if(debug) Serial.println("*** METER CALIB PAGE ***");
+    
     metercalib_page();
   }
   else if (display_page == 7)
