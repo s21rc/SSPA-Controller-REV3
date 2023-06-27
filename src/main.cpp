@@ -72,7 +72,6 @@ volatile bool PROT_OUT_status = LOW;
 
 
 
-uint8_t swr_display = 10; // swr x 10 showing in display
 
 // Structure for display power and SWR
 struct power
@@ -92,16 +91,12 @@ struct power
   uint16_t graph_Watt;
   uint16_t maxGraphWatt;
   float calibration;
-
+  unsigned long lastPEP;
 };
 
 power ANT;
 power LPF;
 power IN;
-
-unsigned long lastANTpep;
-unsigned long lastLPFpep;
-unsigned long lastINpep;
 
 
 
@@ -231,7 +226,7 @@ uint8_t default_value = 0;
 
 volatile uint8_t alarm_code = 0;
 uint8_t last_alarm_code = 0;
-bool last_reset_alarm = LOW;
+
 
 uint8_t V = 0;
 uint8_t lastV = 0;
@@ -699,11 +694,11 @@ float ant_fwd_now()
     
   }
   ANTFWD = ANTFWD / 10;
-  Serial.print("ANT FW ADC: ");
-  Serial.println(ANTFWD);
+  //Serial.print("ANT FW ADC: ");
+  //Serial.println(ANTFWD);
   ANTFWD = ((ANTFWD * ref_ADC) / ResP) + VFdiode;
-  Serial.print("ANT FW V: ");
-  Serial.println(ANTFWD);
+  //Serial.print("ANT FW V: ");
+  //Serial.println(ANTFWD);
   return ANTFWD;
 }
 
@@ -727,11 +722,11 @@ float lpf_fwd_now()
     LPFFWD += analogRead(LPF_FWD);
   }
   LPFFWD = LPFFWD / 10;
-    Serial.print("LPF FWD ADC: ");
-    Serial.println(LPFFWD);
+    //Serial.print("LPF FWD ADC: ");
+    //Serial.println(LPFFWD);
     LPFFWD = ((LPFFWD * ref_ADC) / ResP) + VFdiode;
-    Serial.print("LPF FWD V: ");
-    Serial.println(LPFFWD);
+    //Serial.print("LPF FWD V: ");
+    //Serial.println(LPFFWD);
   
   return LPFFWD;
 }
@@ -809,7 +804,7 @@ void read_ANTpower()
   // Calculate Reflected power
   if (ANT.rawREF > VFdiode)
   {
-    ANT.powerREF = (ANT.powerREF * ANT.powerREF) / ANT.calibration;
+    ANT.powerREF = (ANT.rawREF * ANT.rawREF) / ANT.calibration;
   }
   else
     ANT.powerREF = 0;
@@ -847,11 +842,11 @@ void read_ANTpower()
   // hold peak
   if (ANT.powerFWD >= ANT.PEAKpowerFWD)
   {
-    lastANTpep = millis();
+    ANT.lastPEP = millis();
     ANT.PEAKpowerFWD = ANT.powerFWD;
   }
 
-  if (millis() > (lastANTpep + T_pepHOLD))
+  if (millis() > (ANT.lastPEP + T_pepHOLD))
     ANT.PEAKpowerFWD = ANT.powerFWD; // clear the peak after hold time
   // Efficiency calculation
   if (Veff != 0 && Iprot != 0)
@@ -892,13 +887,11 @@ void read_LPFpower()
   /* === Check if OUTPUT is higher than set value  === */
   if (LPF.powerFWD >= protection_po)
   {
-    if (debug)
-    {
-      Serial.println("Alarm 9 Prot PO");
-      Serial.println(ANT.calibration);
-      Serial.println(LPF.powerFWD);
-      Serial.println(protection_po);
-    }
+     // Serial.println("Alarm 9 Prot PO");
+     // Serial.println(ANT.calibration);
+     // Serial.println(LPF.powerFWD);
+      //Serial.println(protection_po);
+    
     soft_protection();
     alarm_code = 9;
   }
@@ -913,11 +906,11 @@ void read_LPFpower()
   // hold peak
   if (LPF.powerFWD >= LPF.PEAKpowerFWD)
   {
-    lastLPFpep = millis();
+    LPF.lastPEP = millis();
     LPF.PEAKpowerFWD = LPF.powerFWD;
   }
 
-  if (millis() > (lastLPFpep + T_pepHOLD))
+  if (millis() > (LPF.lastPEP + T_pepHOLD))
     LPF.PEAKpowerFWD = LPF.powerFWD; // clear the peak after hold time
 }
 
@@ -962,11 +955,11 @@ void read_INpower()
   // hold peak
   if (IN.powerFWD>= IN.PEAKpowerFWD)
   {
-    lastINpep = millis();
+    IN.lastPEP = millis();
     IN.PEAKpowerFWD = IN.powerFWD;
   }
 
-  if (millis() > (lastINpep + T_pepHOLD))
+  if (millis() > (IN.lastPEP + T_pepHOLD))
     IN.PEAKpowerFWD = IN.powerFWD; // clear the peak after hold time
 }
 
@@ -981,7 +974,8 @@ void update_display(){
       myNex.writeNum("n5.val", LPF.powerFWD);
       myNex.writeNum("n6.val", LPF.powerREF);
       myNex.writeNum("n7.val", Eff);
-
+      
+      myNex.writeNum("x0.val", ANT.swr_display);
       myNex.writeNum("x1.val", ANT.swr_display);
       myNex.writeNum("x2.val", IN.swr_display);
       
@@ -989,6 +983,27 @@ void update_display(){
       myNex.writeNum("j1.val", ANT.graphSWR);
       myNex.writeNum("j2.val", IN.graph_Watt);
       myNex.writeNum("j3.val", IN.graphSWR);
+      
+      ANT.powerFWD = 0;
+      ANT.powerREF = 0;
+      ANT.PEAKpowerFWD = 0;
+      ANT.graph_Watt = 0;
+      ANT.swr_display = 10;
+      ANT.graphSWR = 0;
+
+      LPF.powerFWD = 0;
+      LPF.powerREF = 0;
+      LPF.graph_Watt = 0;
+      LPF.swr_display = 10;
+      LPF.graphSWR = 0;
+
+      IN.powerFWD = 0;
+      IN.PEAKpowerFWD = 0;
+      IN.graph_Watt = 0;
+      IN.swr_display = 10;
+      IN.graphSWR = 0;
+      
+      Eff = 0;
       }
 
 void display_power(bool active)
@@ -998,9 +1013,9 @@ void display_power(bool active)
   {
     if ((millis() - last_Power_Refresh) >= Power_Refresh)
     {
-      swr_display = (ANT.SWR * 10) + 0.5; //// Float x 10 and convert to int with rounding
-      if (swr_display < 10)
-        swr_display = 10; // SWR cannot be lower than 1.0
+      ANT.swr_display = (ANT.SWR * 10) + 0.5; //// Float x 10 and convert to int with rounding
+      if (ANT.swr_display < 10)
+        ANT.swr_display = 10; // SWR cannot be lower than 1.0
 
       IN.swr_display = (IN.SWR * 10) + 0.5; //// Float x 10 and convert to int with rounding
       if (IN.swr_display < 10)
@@ -1009,8 +1024,8 @@ void display_power(bool active)
 
       float graph_limit_watt = (ANT.maxGraphWatt / 100.00);
       ANT.graph_Watt = (ANT.PEAKpowerFWD / graph_limit_watt);
-      Serial.print("=========================================================GRAPH Limit WATT % ");
-      Serial.println(ANT.maxGraphWatt);
+     // Serial.print("=========================================================GRAPH Limit WATT % ");
+     // Serial.println(ANT.maxGraphWatt);
 
       float graph_limit_swr = ((ANT.maxgraphSWR - 1) / 100.00);
       float swr_forgraph = ANT.SWR - 1;
@@ -1024,25 +1039,7 @@ void display_power(bool active)
       IN.graphSWR = in_swr_forgraph;
 
       update_display();
-     
-      ANT.powerFWD = 0;
-      ANT.PEAKpowerFWD = 0;
-      ANT.graph_Watt = 0;
-      ANT.swr_display = 10;
-      ANT.graphSWR = 0;
-
-      LPF.powerFWD = 0;
-      LPF.graph_Watt = 0;
-      LPF.swr_display = 10;
-      LPF.graphSWR = 0;
-
-      IN.powerFWD = 0;
-      IN.PEAKpowerFWD = 0;
-      IN.graph_Watt = 0;
-      IN.swr_display = 10;
-      IN.graphSWR = 0;
-
-      Eff = 0;
+           
 
       last_Power_Refresh = millis();
     }
@@ -1234,10 +1231,10 @@ void lpf(int Nrelay)
     EEPROM.put(72, current_band); // Update band info to Memory when LPF chnages
     EEPROM.put(74, Nrelay);       // Update band info to Memory when LPF chnages
     PCF.selectN(Nrelay);
-    Serial.print("Nrelay:");
-    Serial.println(Nrelay);
-    Serial.print("Current Band:");
-    Serial.println(current_band);
+    //Serial.print("Nrelay:");
+    //Serial.println(Nrelay);
+    //Serial.print("Current Band:");
+    //Serial.println(current_band);
 
     current_lpf = Nrelay;
     last_lpf_relay = Nrelay;
@@ -1267,56 +1264,85 @@ void display_error()
     switch (alarm_code)
     {
     case 0:
-      myNex.writeNum("er1.val", 0);
-      myNex.writeNum("er2.val", 0);
-      myNex.writeNum("er3.val", 0);
-      myNex.writeNum("er4.val", 0);
-      myNex.writeNum("er5.val", 0);
-      myNex.writeNum("er6.val", 0);
-      myNex.writeNum("er7.val", 0);
-      myNex.writeNum("er8.val", 0);
-      myNex.writeStr("er.txt", " ");
+
+      myNex.writeNum("home.ER.val", 0);
+      myNex.writeNum("home.er1.val", 0);
+      myNex.writeNum("home.er2.val", 0);
+      myNex.writeNum("home.er3.val", 0);
+      myNex.writeNum("home.er4.val", 0);
+      myNex.writeNum("home.er5.val", 0);
+      myNex.writeNum("home.er6.val", 0);
+      myNex.writeNum("home.er7.val", 0);
+      myNex.writeNum("home.er8.val", 0);
+      myNex.writeStr("home.er.txt", " ");
       break;
     case 1:
-      myNex.writeNum("er8.val", 1);
-      myNex.writeStr("er.txt", "External Protection Detected (H), correct and clear alarm");
+      myNex.writeNum("home.ER.val", 1);
+      myNex.writeNum("home.er8.val", 1);
+      myNex.writeStr("home.er.txt", "External Protection Detected (H), correct fault then clear alarm from menu");
+      
       break;
     case 2:
-      myNex.writeNum("er1.val", 1);
-      myNex.writeStr("er.txt", "ANT SWR high (H), correct and clear alarm");
+      myNex.writeNum("home.ER.val", 1);
+      myNex.writeNum("home.er1.val", 1);
+      myNex.writeStr("home.er.txt", "ANT SWR high (H), correct fault then clear alarm from menu");
+      
       break;
     case 3:
-      myNex.writeNum("er7.val", 1);
-      myNex.writeStr("er.txt", "High INPUT power (H), correct and clear alarm");
+      myNex.writeNum("home.ER.val", 1);
+      myNex.writeNum("home.er7.val", 1);
+      myNex.writeStr("home.er.txt", "High INPUT power (H), correct fault then clear alarm from menu");
+      
       break;
     case 4:
-      myNex.writeNum("er2.val", 1);
-      myNex.writeStr("er.txt", "LPF SWR High (H), correct and clear alarm");
+      myNex.writeNum("home.ER.val", 1);
+      myNex.writeNum("home.er2.val", 1);
+      myNex.writeStr("home.er.txt", "LPF SWR High (H), correct fault then clear alarm from menu");
+      
       break;
     case 5:
-      myNex.writeNum("er3.val", 1);
-      myNex.writeStr("er.txt", "High Temperature (S), correct and clear alarm");
+      myNex.writeNum("home.ER.val", 1);
+      myNex.writeNum("home.er3.val", 1);
+      myNex.writeStr("home.er.txt", "High Temperature (S), correct fault then clear alarm from menu");
+      
       break;
     case 6:
-      myNex.writeNum("er6.val", 1);
-      myNex.writeStr("er.txt", "High OUTPUT power (S), correct and clear alarm");
+      myNex.writeNum("home.ER.val", 1);
+      myNex.writeNum("home.er6.val", 1);
+      myNex.writeStr("home.er.txt", "High OUTPUT power (S), correct fault then clear alarm from menu");
+      
       break;
     case 7:
-      myNex.writeNum("er1.val", 1);
-      myNex.writeStr("er.txt", "High SWR (S), correct and clear alarm");
+      myNex.writeNum("home.ER.val", 1);
+      myNex.writeNum("home.er1.val", 1);
+      myNex.writeStr("home.er.txt", "High SWR (S), correct fault then clear alarm from menu");
+      
       break;
     case 8:
-      myNex.writeNum("er2.val", 1);
-      myNex.writeStr("er.txt", "LPF mismatch (S), correct and clear alarm");
+      myNex.writeNum("home.ER.val", 1);
+      myNex.writeNum("home.er2.val", 1);
+      myNex.writeStr("home.er.txt", "LPF mismatch (S), correct fault then clear alarm from menu");
+      
       break;
     case 9:
-      myNex.writeNum("er6.val", 1);
-      myNex.writeStr("er.txt", "LPF OUTPUT high (S), correct and clear alarm");
+      myNex.writeNum("home.ER.val", 1);
+      myNex.writeNum("home.er6.val", 1);
+      myNex.writeStr("home.er.txt", "LPF OUTPUT high (S), correct fault then clear alarm from menu");
+      
       break;
     case 10:
-      myNex.writeNum("er2.val", 1);
-      myNex.writeStr("er.txt", "LPF SWR high (S), correct and clear alarm");
+      myNex.writeNum("home.ER.val", 1);
+      myNex.writeNum("home.er2.val", 1);
+      myNex.writeStr("home.er.txt", "LPF SWR high (S), correct fault then clear alarm from menu");
+      
       break;
+    case 11:
+      myNex.writeNum("home.ER.val", 1);
+      myNex.writeNum("home.er7.val", 1);
+      myNex.writeStr("home.er.txt", "High INPUT power (S), correct fault then clear alarm from menu");
+      
+      break;
+          
     }
     last_alarm_code = alarm_code;
   }
@@ -1896,7 +1922,7 @@ void trigger29()
 
 void alarm_clear()
 {
-  alarm_code = 0;
+  
   digitalWrite(RF_IN, LOW);
   digitalWrite(BIAS_ON, LOW);
   digitalWrite(ANT_RXTX, LOW);
@@ -1906,8 +1932,11 @@ void alarm_clear()
   BIAS_ON_status = LOW;
   ANT_RXTX_status = LOW;
   PROT_OUT_status = LOW;
-  myNex.writeStr("vis b0,0");
-  last_reset_alarm = LOW;
+  alarm_code = 0;
+  myNex.writeNum("home.ER.val",0);
+  myNex.writeStr("vis b6,0");
+  myNex.writeStr("vis t5,0");
+ 
 }
 
 // ALARM CLEAR
@@ -2011,14 +2040,7 @@ void tx_sequence()
   }
 }
 
-void reset_alarm_button()
-{
-  if (last_reset_alarm == LOW)
-  {
-    myNex.writeStr("vis b0,1");
-    last_reset_alarm = HIGH;
-  }
-}
+
 
 void homepage_normalrun()
 {
@@ -2052,7 +2074,7 @@ void homepage_alarmrun()
   display_ID();   // Read current
   read_temp();    // Read Temp and display
   fanspeed();     // Set fan speed
-  reset_alarm_button();
+  
 }
 
 void menu_page()
@@ -2087,8 +2109,8 @@ void diagnos_page()
     myNex.writeNum("dn9.val", V_now()*1000*ResV);
     myNex.writeNum("dn10.val", I_now()*1000);
 
-    Serial.print("I:");
-    Serial.println(I_now());
+    //Serial.print("I:");
+    //Serial.println(I_now());
 
 
     myNex.writeNum("dn11.val", band_rotary() * ref_ADC * 1000); // show Band voltage of rotary swith
@@ -2329,15 +2351,15 @@ void setup()
   attachInterrupt(digitalPinToInterrupt(INT_PROT), int_extprot, RISING);
 
   // Attach inturupt for high swr
-  pinMode(INT_ANT, INPUT_PULLDOWN);
-  attachInterrupt(digitalPinToInterrupt(INT_ANT), int_antswr, HIGH);
+  pinMode(INT_ANT, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(INT_ANT), int_antswr, RISING);
 
   // Attach inturupt for high input
-  pinMode(INT_IN, INPUT_PULLDOWN);
+  pinMode(INT_IN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(INT_IN), int_inpo, RISING);
 
   // Attach inturupt for high LPF swr error
-  pinMode(INT_LPF, INPUT_PULLDOWN);
+  pinMode(INT_LPF, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(INT_LPF), int_lpfswr, RISING);
 
   // Attach inturupt for PTT
@@ -2381,14 +2403,14 @@ void setup()
   myNex.writeStr("Er1.txt", error_text);
   // if(debug) Serial.println("*** SETUP END ***");
 
-  // delay(2000);
+  ANT.maxgraphSWR = 3;
 
   // band_selection();
 
-  Serial.print("band:");
-  Serial.println(current_band);
-  Serial.print("LPF:");
-  Serial.println(current_lpf);
+  //Serial.print("band:");
+  //Serial.println(current_band);
+  //Serial.print("LPF:");
+  //Serial.println(current_lpf);
   display_band(current_band);
   display_lpf(current_lpf);
 
@@ -2396,6 +2418,7 @@ void setup()
   display_ID();   // Read current
   read_temp();    // Read Temp and display
   fanspeed();
+
 }
 
 void loop()
