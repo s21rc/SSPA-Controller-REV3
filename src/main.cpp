@@ -26,10 +26,12 @@
 #include <PCF8574.h>            //https://registry.platformio.org/libraries/robtillaart/PCF8574
 #include <pinout.h>
 
+
+
 bool debug = true;
 
 // PCF8574 pcf8574(0x38);
-PCF8574 PCF(0x38, &Wire2);
+PCF8574 PCF(0x20, &Wire2);
 
 EasyNex myNex(UART_DISP);
 
@@ -2485,3 +2487,4 @@ void loop()
   }
   // delay(1000);
 }
+
