@@ -1,0 +1,5 @@
+![Main Display](./main_display.PNG)
+![Menu Page](./menu.PNG)
+![Main Settings Page](./settings.PNG)
+![Meter Calibration Page](./meter_calibration.PNG)
+![Band Calibration Page](./band_calibration.PNG)

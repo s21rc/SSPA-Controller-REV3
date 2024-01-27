@@ -1,0 +1,9 @@
+PCB V3.0.2 - errors of 3.0.1 fixed, not tested yet.
+PCB V3.0.1 has few ground missing and i2c has short- need manual fixing. All other test OK
+PCB V3.0 had slight error (trace overlap) and now solved.
+
+NOTE: In BOM Select U1 as per your LPF
+LPF with common ground relays (High Side Switching): UDN2981 or compatible
+LPF with common +ve relays (Low Side Switching): ULN2803 or compatibble
+
+If you fabricate and try - do at own risk.

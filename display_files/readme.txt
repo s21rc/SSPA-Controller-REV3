@@ -1,1 +1,0 @@
-Display HMI and TFT files will be uploaded here.
