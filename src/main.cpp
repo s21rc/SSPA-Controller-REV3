@@ -1,5 +1,5 @@
 
-/*  Arduino Code (Version 3.0) for S21RC SSPA Controller REV3.0 PCB.                       */
+/*  Arduino Code (Version 3.x) for S21RC SSPA Controller REV3.x PCB.                       */
 /*                                                                                          */
 /*  Created by Fazlay Rabby S21RC, JUNE, 2023.                                              */
 /*  Released into the public domain.                                                        */
@@ -10,7 +10,7 @@
 /*  If you need any clarification or help please issue a ticket in github.                  */
 /*                                                                                          */
 
-/* For PCB Version REV3.0, CODE V 3.0, Display: Nextion 5inch (800x480)                     */
+/* For PCB Version REV3.0.2, CODE V 3.0.0, Display: Nextion 5inch (800x480)                     */
 
 /*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 /*    THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS   */
@@ -23,15 +23,15 @@
 #include <Wire.h>
 #include <DallasTemperature.h>  //https://github.com/milesburton/Arduino-Temperature-Control-Library
 #include "EasyNextionLibrary.h" // https://github.com/Seithan/EasyNextionLibrary
-#include <PCF8574.h>            //https://registry.platformio.org/libraries/robtillaart/PCF8574
+#include <MCP23008.h>           //https://registry.platformio.org/libraries/robtillaart/MCP23008
 #include <pinout.h>
 
-
-
-bool debug = true;
+bool debug = false;
 
 // PCF8574 pcf8574(0x38);
-PCF8574 PCF(0x20, &Wire2);
+// PCF8574 PCF(0x20, &Wire2);
+
+MCP23008 MCP(0x20, &Wire2);
 
 EasyNex myNex(UART_DISP);
 
@@ -49,7 +49,7 @@ float last_temp_digi1 = 0.0;
 float last_temp_digi2 = 0.0;
 
 // NTC temp
-#define ntcbeta 3950 // for 10K 3950 NTC
+#define ntcbeta 7900 // 3950 for 10K 3950 NTC
 
 uint16_t adc_ntc1 = 0;
 uint16_t adc_ntc2 = 0;
@@ -72,17 +72,14 @@ volatile bool BIAS_ON_status = LOW;
 volatile bool ANT_RXTX_status = LOW;
 volatile bool PROT_OUT_status = LOW;
 
-
-
-
 // Structure for display power and SWR
 struct power
 {
-  float powerFWD; //power forward (watts)
-  float rawFWD; //power forward for SWR calculation
+  float powerFWD;     // power forward (watts)
+  float rawFWD;       // power forward for SWR calculation
   float PEAKpowerFWD; // power forward max (for peak hold)
-  float powerREF; //power reflected (watts)
-  float rawREF; //power reflected for SWR calculation
+  float powerREF;     // power reflected (watts)
+  float rawREF;       // power reflected for SWR calculation
   float PEAKpowerREF; // power reflected max (for peak hold)
   float SWR;
   float PEAKSWR;
@@ -99,8 +96,6 @@ struct power
 power ANT;
 power LPF;
 power IN;
-
-
 
 /* ======= Variables to save seetings data in EEPROM ======= */
 // Structure for band related values
@@ -127,7 +122,8 @@ band b11;
 uint8_t band_mode;
 
 uint16_t protection_po;
-uint8_t protection_swr = 3;
+float protection_swr;
+uint8_t protection_swr_mem;
 uint8_t protection_temp;
 uint8_t protection_in;
 uint8_t protection_vdd;
@@ -150,8 +146,8 @@ uint8_t band8_status;
 
 /* USER DEFINED VARIABLES, PUT AS PER YOUR BOARD */
 
-uint8_t graph_maxSwr = 3;             // = 3; // Scale of the SWR for display
-unsigned long Temp_Refresh = 0;       //
+uint8_t graph_maxSwr = 3;            // = 3; // Scale of the SWR for display
+unsigned long Temp_Refresh = 0;      //
 unsigned long Display_Refresh = 500; // refresh Temp display every N mili sec, set as per your liking
 unsigned long Volt_Refresh = 500;    // refresh V display every N mili sec, set as per your liking
 unsigned long ID_Refresh = 500;      // refresh I display every N mili sec, set as per your liking
@@ -162,13 +158,13 @@ unsigned long bandcalib_Refresh = 200;
 unsigned long metercalib_Refresh = 200;
 float ResV1 = 10000.00; // Set R1 of voltage devider
 float ResV2 = 470.00;   // Set R2 of voltage devider
-float ResP1 = 1800.00;  // Set R1 of voltage devider for power/swr input
+float ResP1 = 1500.00;  // Set R1 of voltage devider for power/swr input
 float ResP2 = 470.00;   // Set R2 of voltage devider for power/swr input
 int RL = 2530;          // Load Resistor at Current sensor
 
 uint8_t band_margin = 20; // around 90mV margin for change of voltage reference between SSPA and Radio
 
-float ref_ADC = (3.30 / 1024); // Refrence is 3.3v for Teensy ADC
+float ref_ADC = (3.23 / 1024); // Refrence is 3.3v for Teensy ADC
 
 // Calibration factors
 uint16_t measured_power_out;
@@ -180,7 +176,6 @@ float maxCalibV_out;
 float CalibV_out;
 float maxCalibV_in;
 float CalibV_in;
-
 
 bool calibpage_load = false;
 uint8_t last_calib_band = 99;
@@ -201,7 +196,7 @@ bool PTT_status = false;
 bool TX_Enable = true;
 bool error_temp_status = false;
 bool antenna2_status = false;
-bool mode_button_touch = false;
+bool last_antenna2 = false;
 
 uint8_t last_display_lpf = 0;
 uint8_t last_lpf_relay = 0;
@@ -229,7 +224,6 @@ uint8_t default_value = 0;
 volatile uint8_t alarm_code = 0;
 uint8_t last_alarm_code = 0;
 
-
 uint8_t V = 0;
 uint8_t lastV = 0;
 float ResV = ResV2 / (ResV1 + ResV2);
@@ -242,11 +236,9 @@ uint8_t graph_Temp2 = 0;
 uint8_t graph_Temp3 = 0;
 uint8_t graph_Temp4 = 0;
 
-
 /* ======== power and swr related variable ======== */
 
 float ResP = ResP2 / (ResP1 + ResP2); // Voltage devider for SWR/POWER/LPF
-
 
 /* === PWM Function === */
 int PWM = 0;
@@ -297,15 +289,8 @@ uint8_t bcd2band(uint8_t band_bcd_decimal)
 // Returns ADC value from band volt input
 uint16_t band_volt()
 {
-  uint16_t band_volt_adc = 0;
-
-  for (uint8_t i = 0; i < 10; i++)
-  {
-    band_volt_adc += analogRead(BAND_V);
-  }
-  band_volt_adc /= 10;
-
-  return band_volt_adc;
+  return analogRead(BAND_V);
+  // return band_volt_adc;
 }
 
 // Band Mapping from BAND Volatage to Band#
@@ -422,18 +407,13 @@ uint8_t lpf2band(uint8_t lpf)
 // Returns ADC value from Manual Rotary switch input
 uint16_t band_rotary()
 {
-  uint16_t band_rotary_adc = 0;
-  for (uint8_t i = 0; i < 10; i++)
-  {
-    band_rotary_adc += analogRead(ROTARY_POS);
-  }
-  band_rotary_adc /= 10;
-  return band_rotary_adc;
+
+  return analogRead(ROTARY_POS);
 }
 
 // Band Mapping from ROTARY to Band#
 uint8_t rotary2band(uint16_t band_rotary_adc)
-{  
+{
   uint8_t band = 0;
   if (band_rotary_adc > (b1.rotary - band_margin) && band_rotary_adc < (b1.rotary + band_margin))
     band = 1;
@@ -473,7 +453,8 @@ void loadEEPROM()
   EEPROM.get(21, ANT.maxGraphWatt);
   EEPROM.get(25, graph_maxTemp);
   EEPROM.get(30, protection_po);
-  EEPROM.get(35, protection_swr);
+  EEPROM.get(35, protection_swr_mem);
+
   EEPROM.get(40, protection_temp);
   EEPROM.get(45, T_pepHOLD);
   EEPROM.get(50, PWM_FREQ_KHZ);
@@ -484,6 +465,7 @@ void loadEEPROM()
   EEPROM.get(70, band_mode);
   EEPROM.get(72, current_band);
   EEPROM.get(74, current_lpf);
+  EEPROM.get(76, antenna2_status);
 
   EEPROM.get(150, ntc1_status);
   EEPROM.get(151, ntc2_status);
@@ -505,6 +487,8 @@ void loadEEPROM()
   EEPROM.get(360, b9);
   EEPROM.get(380, b10);
   EEPROM.get(400, b11);
+
+  protection_swr = (float)protection_swr_mem / 10.0;
 }
 
 void saveEEPROM()
@@ -521,7 +505,7 @@ void saveEEPROM()
   EEPROM.put(21, ANT.maxGraphWatt);
   EEPROM.put(25, graph_maxTemp);
   EEPROM.put(30, protection_po);
-  EEPROM.put(35, protection_swr);
+  EEPROM.put(35, protection_swr_mem);
   EEPROM.put(40, protection_temp);
   EEPROM.put(45, T_pepHOLD);
   EEPROM.put(50, PWM_FREQ_KHZ);
@@ -532,6 +516,7 @@ void saveEEPROM()
   EEPROM.put(70, band_mode);
   EEPROM.put(72, current_band);
   EEPROM.put(74, current_lpf);
+  EEPROM.put(76, antenna2_status);
 
   EEPROM.put(150, ntc1_status);
   EEPROM.put(151, ntc2_status);
@@ -595,13 +580,8 @@ void LCDband_disable()
 // Read Analog NTC values
 void read_ntc1()
 {
-  adc_ntc1 = 0;
 
-  for (uint8_t i = 0; i < 10; i++)
-  {
-    adc_ntc1 += analogRead(NTC1);
-  }
-  adc_ntc1 = adc_ntc1 / 10;
+  adc_ntc1 = analogRead(NTC1);
   res_ntc1 = (1023.00 / adc_ntc1) - 1.0;
   res_ntc1 = 10000.00 / res_ntc1;
   temp_ntc1 = res_ntc1 / 10000.00;
@@ -614,14 +594,7 @@ void read_ntc1()
 
 void read_ntc2()
 {
-  adc_ntc2 = 0;
-
-  for (uint8_t i = 0; i < 10; i++)
-  {
-    adc_ntc2 += analogRead(NTC2);
-  }
-  adc_ntc2 = adc_ntc2 / 10;
-
+  adc_ntc2 = analogRead(NTC2);
   res_ntc2 = (1023.00 / adc_ntc2) - 1;
   res_ntc2 = 10000.00 / res_ntc2;
 
@@ -637,22 +610,25 @@ void read_ntc2()
 float I_now()
 {
   float currentI = 0;
-
-  for (uint8_t i = 0; i < 10; i++)
-  {
-    currentI += analogRead(ID);
-  }
-  currentI /= 10;
+  /*
+    for (uint8_t i = 0; i < 10; i++)
+    {
+      currentI += analogRead(ID);
+    }
+    currentI /= 10;
+    */
+  currentI = analogRead(ID);
   currentI *= ref_ADC;
   if (display_page == 4)
   {
     return currentI;
-  } else {
+  }
+  else
+  {
     currentI /= RL;
     currentI *= 13000;
     return currentI;
   }
-
 }
 
 /* ===  protection enable Function === */
@@ -674,11 +650,14 @@ void soft_protection()
 float V_now()
 {
   float currentV = 0;
-  for (uint8_t i = 0; i < 10; i++)
-  {
-    currentV += analogRead(VCC);
-  }
-  currentV = currentV / 10;
+  /*
+   for (uint8_t i = 0; i < 10; i++)
+   {
+     currentV += analogRead(VCC);
+   }
+   currentV = currentV / 10;
+   */
+  currentV = analogRead(VCC);
   currentV = (currentV * ref_ADC);
   currentV /= ResV;
   return currentV;
@@ -689,83 +668,124 @@ float V_now()
 float ant_fwd_now()
 {
   float ANTFWD = 0;
-
-  for (uint8_t i = 0; i < 10; i++)
-  {
-    ANTFWD += analogRead(ANT_FWD);
-    
-  }
-  ANTFWD = ANTFWD / 10;
-  //Serial.print("ANT FW ADC: ");
-  //Serial.println(ANTFWD);
-  ANTFWD = ((ANTFWD * ref_ADC) / ResP) + VFdiode;
-  //Serial.print("ANT FW V: ");
-  //Serial.println(ANTFWD);
+  /*
+    for (uint8_t i = 0; i < 10; i++)
+    {
+      ANTFWD += analogRead(ANT_FWD);
+    }
+    ANTFWD = ANTFWD / 10;
+    */
+  ANTFWD = analogRead(ANT_FWD);
+  // Serial.print("ANT FW ADC: ");
+  // Serial.println(ANTFWD);
+  ANTFWD = ((ANTFWD * ref_ADC) / ResP);
+  if (ANTFWD > 0.1)
+    ANTFWD += VFdiode;
+  else
+    ANTFWD = 0.0;
+  // Serial.print("ANT FW V: ");
+  // Serial.println(ANTFWD);
   return ANTFWD;
 }
 
 float ant_ref_now()
 {
   float ANTREF = 0.0;
+  /*
   for (uint8_t i = 0; i < 10; i++)
   {
     ANTREF += analogRead(ANT_REF);
   }
   ANTREF = ANTREF / 10;
-  ANTREF = ((ANTREF * ref_ADC) / ResP) + VFdiode;
+  */
+  ANTREF = analogRead(ANT_REF);
+  ANTREF = ((ANTREF * ref_ADC) / ResP);
+  if (ANTREF > 0.1)
+    ANTREF += VFdiode;
+  else
+    ANTREF = 0.0;
   return ANTREF;
 }
 
 float lpf_fwd_now()
 {
   float LPFFWD = 0.0;
+  /*
   for (uint8_t i = 0; i < 10; i++)
   {
     LPFFWD += analogRead(LPF_FWD);
   }
   LPFFWD = LPFFWD / 10;
-    //Serial.print("LPF FWD ADC: ");
-    //Serial.println(LPFFWD);
-    LPFFWD = ((LPFFWD * ref_ADC) / ResP) + VFdiode;
-    //Serial.print("LPF FWD V: ");
-    //Serial.println(LPFFWD);
-  
+
+  */
+  LPFFWD = analogRead(LPF_FWD);
+  // Serial.print("LPF FWD ADC: ");
+  // Serial.println(LPFFWD);
+  LPFFWD = ((LPFFWD * ref_ADC) / ResP);
+  if (LPFFWD > 0.1)
+    LPFFWD += VFdiode;
+  else
+    LPFFWD = 0.0;
+  // Serial.print("LPF FWD V: ");
+  // Serial.println(LPFFWD);
+
   return LPFFWD;
 }
 
 float lpf_ref_now()
 {
   float LPFREF = 0.0;
-  for (uint8_t i = 0; i < 10; i++)
-  {
-    LPFREF += analogRead(LPF_REF);
-  }
-  LPFREF = LPFREF / 10;
-  LPFREF = ((LPFREF * ref_ADC) / ResP) + VFdiode;
+  /*
+    for (uint8_t i = 0; i < 10; i++)
+    {
+      LPFREF += analogRead(LPF_REF);
+    }
+    LPFREF = LPFREF / 10;
+  */
+  LPFREF = analogRead(LPF_REF);
+  LPFREF = ((LPFREF * ref_ADC) / ResP);
+  if (LPFREF > 0.1)
+    LPFREF += VFdiode;
+  else
+    LPFREF = 0.0;
   return LPFREF;
 }
 
 float in_fwd_now()
 {
   float INFWD = 0.0;
+  /*
   for (uint8_t i = 0; i < 10; i++)
   {
     INFWD += analogRead(IN_FWD);
   }
   INFWD = INFWD / 10;
-  INFWD = ((INFWD * ref_ADC) / ResP) + VFdiode;
+*/
+  INFWD = analogRead(IN_FWD);
+  INFWD = ((INFWD * ref_ADC) / ResP);
+  if (INFWD > 0.1)
+    INFWD += VFdiode;
+  else
+    INFWD = 0.0;
   return INFWD;
 }
 
 float in_ref_now()
 {
   float INREF = 0.0;
+  /*
   for (uint8_t i = 0; i < 10; i++)
   {
     INREF += analogRead(IN_REF);
   }
   INREF = INREF / 10;
-  INREF = ((INREF * ref_ADC) / ResP) + VFdiode;
+  */
+  INREF = analogRead(IN_REF);
+  INREF = ((INREF * ref_ADC) / ResP);
+  if (INREF > 0.1)
+    INREF += VFdiode;
+  else
+    INREF = 0.0;
   return INREF;
 }
 
@@ -792,34 +812,61 @@ void read_ANTpower()
 
   ANT.rawFWD = ant_fwd_now();
   ANT.rawREF = ant_ref_now();
-  
-  
-  
+
+  // Serial.print("ANT.rawFWD: ");
+  // Serial.println(ANT.rawFWD);
+  // Serial.print("ANT.rawREF: ");
+  // Serial.println(ANT.rawREF);
+
   // Calculate Forward power
-  if (ANT.rawFWD > VFdiode)
+  if (ANT.rawFWD > VFdiode + 0.1)
   { // only correct for diode voltage when more than zero
     ANT.powerFWD = (ANT.rawFWD * ANT.rawFWD) / ANT.calibration;
+    // Serial.println("ANT.rawFWD > VFdiode");
   }
   else
     ANT.powerFWD = 0;
 
   // Calculate Reflected power
-  if (ANT.rawREF > VFdiode)
+  if (ANT.rawREF > VFdiode + 0.1)
   {
     ANT.powerREF = (ANT.rawREF * ANT.rawREF) / ANT.calibration;
+    // Serial.println("ANT.rawFWD > VFdiode");
   }
   else
     ANT.powerREF = 0;
 
   // Calculate SWR
-  if (ANT.powerREF > 0 && !ANT.powerFWD == 0)
+  // if (ANT.powerREF != 0.0 && ANT.powerFWD != 0.0)
+  /* if (ANT.powerREF != 0.0)
+   {
+     ANT.power_ratio = ANT.powerFWD / ANT.powerREF;
+     ANT.SWR = abs((1 + sqrt(ANT.power_ratio)) / (1 - sqrt(ANT.power_ratio)));
+   }
+   else
+   {
+     ANT.SWR = 1.0;
+   } */
+  if (ANT.rawREF != 0.0)
   {
-    ANT.power_ratio = ANT.powerFWD / ANT.powerREF;
-    ANT.SWR = abs((1 + sqrt(ANT.power_ratio)) / (1 - sqrt(ANT.power_ratio)));
+    ANT.SWR = abs((ANT.rawFWD + ANT.rawREF) / (ANT.rawFWD - ANT.rawREF));
   }
   else
-    ANT.SWR = 1;
+    ANT.SWR = 1.0;
 
+  // Serial.print("ANT.powerFWD: ");
+  // Serial.println(ANT.powerFWD);
+  // Serial.print("ANT.powerREF: ");
+  // Serial.println(ANT.powerREF);
+  // Serial.print("ANT SWR: ");
+  // Serial.println(ANT.SWR);
+
+  // Serial.print("ANT SWR: ");
+  // Serial.println(ANT.SWR);
+  // Serial.print("protection_swr: ");
+  // Serial.println(protection_swr);
+  // Serial.print("protection_swr_mem: ");
+  // Serial.println(protection_swr_mem);
   /* === Check if OUTPUT is higher than set value  === */
   if (ANT.powerFWD >= protection_po)
   {
@@ -862,7 +909,7 @@ void read_LPFpower()
   LPF.rawREF = lpf_ref_now();
 
   // Calculate Forward power
-  if (LPF.rawFWD > VFdiode)
+  if (LPF.rawFWD > VFdiode + 0.1)
   { // only correct for diode voltage when more than zero
     LPF.powerFWD = (LPF.rawFWD * LPF.rawFWD) / ANT.calibration;
   }
@@ -870,7 +917,7 @@ void read_LPFpower()
     LPF.powerFWD = 0;
 
   // Calculate Reflected power
-  if (LPF.rawREF > VFdiode)
+  if (LPF.rawREF > VFdiode + 0.1)
   { // only correct for diode voltage when more than zero
     LPF.powerREF = (LPF.powerREF * LPF.powerREF) / ANT.calibration;
   }
@@ -878,22 +925,29 @@ void read_LPFpower()
     LPF.powerREF = 0;
 
   // Calculate SWR
-  if (LPF.powerREF > 0 && !LPF.powerFWD == 0)
+  /*if (LPF.powerREF > 0 && !LPF.powerFWD == 0)
   {
     LPF.power_ratio = LPF.powerFWD / LPF.powerREF;
     LPF.SWR = abs((1 + sqrt(LPF.power_ratio)) / (1 - sqrt(LPF.power_ratio)));
   }
   else
-    LPF.SWR = 1;
+    LPF.SWR = 1; */
+
+  if (LPF.rawREF != 0.0)
+  {
+    LPF.SWR = abs((LPF.rawFWD + LPF.rawREF) / (LPF.rawFWD - LPF.rawREF));
+  }
+  else
+    LPF.SWR = 1.0;
 
   /* === Check if OUTPUT is higher than set value  === */
   if (LPF.powerFWD >= protection_po)
   {
-     // Serial.println("Alarm 9 Prot PO");
-     // Serial.println(ANT.calibration);
-     // Serial.println(LPF.powerFWD);
-      //Serial.println(protection_po);
-    
+    // Serial.println("Alarm 9 Prot PO");
+    // Serial.println(ANT.calibration);
+    // Serial.println(LPF.powerFWD);
+    // Serial.println(protection_po);
+
     soft_protection();
     alarm_code = 9;
   }
@@ -923,39 +977,49 @@ void read_INpower()
   IN.rawREF = in_ref_now();
 
   // Calculate Forward power
-  if (IN.rawFWD > VFdiode)
+  if (IN.rawFWD > VFdiode + 0.1)
   { // only correct for diode voltage when more than zero
-    IN.powerFWD= (IN.rawFWD * IN.rawFWD) / IN.calibration;
+    IN.powerFWD = (IN.rawFWD * IN.rawFWD) / IN.calibration;
   }
   else
-    IN.powerFWD= 0;
+    IN.powerFWD = 0;
 
   // Calculate Reflected power
-  if (IN.rawREF > VFdiode)
+  if (IN.rawREF > VFdiode + 0.1)
   {
-    IN.powerREF = (IN.powerREF * IN.powerREF) / IN.calibration;
+    IN.powerREF = (IN.rawREF * IN.rawREF) / IN.calibration;
   }
   else
     IN.powerREF = 0;
 
   // Calculate SWR
-  if (IN.powerREF > 0 && !IN.powerFWD== 0)
+  /*
+  if (IN.powerREF > 0 && !IN.powerFWD == 0)
   {
-    IN.power_ratio = IN.powerFWD/ IN.powerREF;
+    IN.power_ratio = IN.powerFWD / IN.powerREF;
     IN.SWR = abs((1 + sqrt(IN.power_ratio)) / (1 - sqrt(IN.power_ratio)));
   }
   else
     IN.SWR = 1;
 
+*/
+
+  if (IN.rawREF != 0.0)
+  {
+    IN.SWR = abs((IN.rawFWD + IN.rawREF) / (IN.rawFWD - IN.rawREF));
+  }
+  else
+    IN.SWR = 1.0;
+
   /* === Check if OUTPUT is higher than set value  === */
 
-  if (IN.powerFWD>= protection_in)
+  if (IN.powerFWD >= protection_in)
   {
     soft_protection();
     alarm_code = 11;
   }
   // hold peak
-  if (IN.powerFWD>= IN.PEAKpowerFWD)
+  if (IN.powerFWD >= IN.PEAKpowerFWD)
   {
     IN.lastPEP = millis();
     IN.PEAKpowerFWD = IN.powerFWD;
@@ -967,46 +1031,47 @@ void read_INpower()
 
 /* === SWR/Po display Function === */
 // Refresh screen every N miliseconds (N = PdelayInMillis)
-void update_display(){
-      myNex.writeNum("n0.val", ANT.PEAKpowerFWD);
-      myNex.writeNum("n1.val", ANT.powerFWD);
-      myNex.writeNum("n2.val", IN.powerFWD);
-      myNex.writeNum("n3.val", ANT.powerFWD);
-      myNex.writeNum("n4.val", ANT.powerREF);
-      myNex.writeNum("n5.val", LPF.powerFWD);
-      myNex.writeNum("n6.val", LPF.powerREF);
-      myNex.writeNum("n7.val", Eff);
-      
-      myNex.writeNum("x0.val", ANT.swr_display);
-      myNex.writeNum("x1.val", ANT.swr_display);
-      myNex.writeNum("x2.val", IN.swr_display);
-      
-      myNex.writeNum("j0.val", ANT.graph_Watt);
-      myNex.writeNum("j1.val", ANT.graphSWR);
-      myNex.writeNum("j2.val", IN.graph_Watt);
-      myNex.writeNum("j3.val", IN.graphSWR);
-      
-      ANT.powerFWD = 0;
-      ANT.powerREF = 0;
-      ANT.PEAKpowerFWD = 0;
-      ANT.graph_Watt = 0;
-      ANT.swr_display = 10;
-      ANT.graphSWR = 0;
+void update_display()
+{
+  myNex.writeNum("n0.val", ANT.PEAKpowerFWD);
+  myNex.writeNum("n1.val", ANT.powerFWD);
+  myNex.writeNum("n2.val", IN.powerFWD);
+  myNex.writeNum("n3.val", ANT.powerFWD);
+  myNex.writeNum("n4.val", ANT.powerREF);
+  myNex.writeNum("n5.val", LPF.powerFWD);
+  myNex.writeNum("n6.val", LPF.powerREF);
+  myNex.writeNum("n7.val", Eff);
 
-      LPF.powerFWD = 0;
-      LPF.powerREF = 0;
-      LPF.graph_Watt = 0;
-      LPF.swr_display = 10;
-      LPF.graphSWR = 0;
+  myNex.writeNum("x0.val", ANT.swr_display);
+  myNex.writeNum("x1.val", ANT.swr_display);
+  myNex.writeNum("x2.val", IN.swr_display);
 
-      IN.powerFWD = 0;
-      IN.PEAKpowerFWD = 0;
-      IN.graph_Watt = 0;
-      IN.swr_display = 10;
-      IN.graphSWR = 0;
-      
-      Eff = 0;
-      }
+  myNex.writeNum("j0.val", ANT.graph_Watt);
+  myNex.writeNum("j1.val", ANT.graphSWR);
+  myNex.writeNum("j2.val", IN.graph_Watt);
+  myNex.writeNum("j3.val", IN.graphSWR);
+
+  ANT.powerFWD = 0;
+  ANT.powerREF = 0;
+  ANT.PEAKpowerFWD = 0;
+  ANT.graph_Watt = 0;
+  ANT.swr_display = 10;
+  ANT.graphSWR = 0;
+
+  LPF.powerFWD = 0;
+  LPF.powerREF = 0;
+  LPF.graph_Watt = 0;
+  LPF.swr_display = 10;
+  LPF.graphSWR = 0;
+
+  IN.powerFWD = 0;
+  IN.PEAKpowerFWD = 0;
+  IN.graph_Watt = 0;
+  IN.swr_display = 10;
+  IN.graphSWR = 0;
+
+  Eff = 0;
+}
 
 void display_power(bool active)
 {
@@ -1023,25 +1088,22 @@ void display_power(bool active)
       if (IN.swr_display < 10)
         IN.swr_display = 10; // SWR cannot be lower than 1.0
 
-
       float graph_limit_watt = (ANT.maxGraphWatt / 100.00);
       ANT.graph_Watt = (ANT.PEAKpowerFWD / graph_limit_watt);
-     // Serial.print("=========================================================GRAPH Limit WATT % ");
-     // Serial.println(ANT.maxGraphWatt);
+      // Serial.print("=========================================================GRAPH Limit WATT % ");
+      // Serial.println(ANT.maxGraphWatt);
 
       float graph_limit_swr = ((ANT.maxgraphSWR - 1) / 100.00);
       float swr_forgraph = ANT.SWR - 1;
       ANT.graphSWR = swr_forgraph / graph_limit_swr;
 
-
       IN.graph_Watt = IN.PEAKpowerFWD;
 
-      ///float graph_limit_swr = ((graph_maxSwr - 1) / 100.00);
+      /// float graph_limit_swr = ((graph_maxSwr - 1) / 100.00);
       float in_swr_forgraph = IN.SWR - 1;
       IN.graphSWR = in_swr_forgraph;
 
       update_display();
-           
 
       last_Power_Refresh = millis();
     }
@@ -1068,9 +1130,9 @@ void display_power(bool active)
       IN.graphSWR = 0;
 
       Eff = 0;
-      
+
       update_display();
-      
+
       last_Power_Refresh = millis();
     }
   }
@@ -1226,17 +1288,25 @@ void display_lpf(int Nband)
 
 // Select LPF
 
+void set_lpf(int lpf_relay)
+{
+
+  MCP.write8(LOW);
+  MCP.write1(lpf_relay - 1, HIGH);
+}
+
 void lpf(int Nrelay)
 {
   if (last_lpf_relay != Nrelay)
   {
     EEPROM.put(72, current_band); // Update band info to Memory when LPF chnages
     EEPROM.put(74, Nrelay);       // Update band info to Memory when LPF chnages
-    PCF.selectN(Nrelay);
-    //Serial.print("Nrelay:");
-    //Serial.println(Nrelay);
-    //Serial.print("Current Band:");
-    //Serial.println(current_band);
+
+    set_lpf(Nrelay);
+    // Serial.print("Nrelay:");
+    // Serial.println(Nrelay);
+    // Serial.print("Current Band:");
+    // Serial.println(current_band);
 
     current_lpf = Nrelay;
     last_lpf_relay = Nrelay;
@@ -1282,69 +1352,68 @@ void display_error()
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er8.val", 1);
       myNex.writeStr("home.er.txt", "External Protection Detected (H), correct fault then clear alarm from menu");
-      
+
       break;
     case 2:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er1.val", 1);
       myNex.writeStr("home.er.txt", "ANT SWR high (H), correct fault then clear alarm from menu");
-      
+
       break;
     case 3:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er7.val", 1);
       myNex.writeStr("home.er.txt", "High INPUT power (H), correct fault then clear alarm from menu");
-      
+
       break;
     case 4:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er2.val", 1);
       myNex.writeStr("home.er.txt", "LPF SWR High (H), correct fault then clear alarm from menu");
-      
+
       break;
     case 5:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er3.val", 1);
       myNex.writeStr("home.er.txt", "High Temperature (S), correct fault then clear alarm from menu");
-      
+
       break;
     case 6:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er6.val", 1);
       myNex.writeStr("home.er.txt", "High OUTPUT power (S), correct fault then clear alarm from menu");
-      
+
       break;
     case 7:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er1.val", 1);
       myNex.writeStr("home.er.txt", "High SWR (S), correct fault then clear alarm from menu");
-      
+
       break;
     case 8:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er2.val", 1);
       myNex.writeStr("home.er.txt", "LPF mismatch (S), correct fault then clear alarm from menu");
-      
+
       break;
     case 9:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er6.val", 1);
       myNex.writeStr("home.er.txt", "LPF OUTPUT high (S), correct fault then clear alarm from menu");
-      
+
       break;
     case 10:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er2.val", 1);
       myNex.writeStr("home.er.txt", "LPF SWR high (S), correct fault then clear alarm from menu");
-      
+
       break;
     case 11:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er7.val", 1);
       myNex.writeStr("home.er.txt", "High INPUT power (S), correct fault then clear alarm from menu");
-      
+
       break;
-          
     }
     last_alarm_code = alarm_code;
   }
@@ -1465,8 +1534,8 @@ void read_temp()
       */
 
       // show NTC output in milivolt
-      myNex.writeNum("dn0.val", adc_ntc1 * ref_ADC*1000);
-      myNex.writeNum("dn1.val", adc_ntc2 * ref_ADC*1000);
+      myNex.writeNum("dn0.val", adc_ntc1 * ref_ADC * 1000);
+      myNex.writeNum("dn1.val", adc_ntc2 * ref_ADC * 1000);
 
       // display Digital sensor output in degree C
       myNex.writeNum("dx0.val", Tdisplay3);
@@ -1489,32 +1558,31 @@ void band_selection()
 {
   if (PTT_status != HIGH)
   {
-    if (band_rotary() < 10)
+    if (band_rotary() < 50 || rotband_status != 1)
     {
       if (band_mode == 1)
-      {// TOUCH
+      { // TOUCH
         LCDband_enable();
         current_band = lpf2band(lpf_bank);
-        if (current_band != last_band){
+        if (current_band != last_band)
+        {
           lpf(lpf_bank);
           last_band = current_band;
         }
 
-        if (mode_button_touch != true){
-          myNex.writeNum("bt0.val", 0);
-          myNex.writeNum("bt1.val", 0);
-          myNex.writeNum("bt2.val", 0);
-          myNex.writeNum("bt3.val", 1);
-          mode_button_touch = true;
-        }
+        myNex.writeNum("bt0.val", 0);
+        myNex.writeNum("bt1.val", 0);
+        myNex.writeNum("bt2.val", 0);
+        myNex.writeNum("bt3.val", 1);
       }
 
-      else if (band_mode == 2)
-      {// BCD
+      else if (band_mode == 2 && bcdband_status)
+      { // BCD
         LCDband_disable();
         current_band = bcd2band(band_bcd());
-        if (current_band != last_band){
-          
+        if (current_band != last_band)
+        {
+
           lpf_bank = band2lpf(current_band);
           lpf(lpf_bank);
           myNex.writeNum("bt0.val", 0);
@@ -1524,19 +1592,20 @@ void band_selection()
           last_band = current_band;
         }
       }
-      else if (band_mode == 3)
-      {// BAND V
+      else if (band_mode == 3 && vband_status)
+      { // BAND V
         LCDband_disable();
         current_band = bandV2band(band_volt());
-        if (current_band != last_band){
-          
+        if (current_band != last_band)
+        {
+
           lpf_bank = band2lpf(current_band);
           lpf(lpf_bank);
           myNex.writeNum("bt0.val", 1);
           myNex.writeNum("bt1.val", 0);
           myNex.writeNum("bt2.val", 0);
           myNex.writeNum("bt3.val", 0);
-          last_band = current_band;  
+          last_band = current_band;
         }
       }
     }
@@ -1544,10 +1613,11 @@ void band_selection()
     {
       // ROTARY
       LCDband_disable();
-      mode_button_touch = false;
+
       current_band = rotary2band(band_rotary());
-      if (current_band != last_band){
-        
+      if (current_band != last_band)
+      {
+
         lpf_bank = band2lpf(current_band);
         lpf(lpf_bank);
         myNex.writeNum("bt0.val", 0);
@@ -1565,54 +1635,139 @@ void trigger1()
 { // x01
   band_mode = 1;
   lpf_bank = 1;
+  myNex.writeNum("bn1.val", 1);
+  myNex.writeNum("bn2.val", 0);
+  myNex.writeNum("bn3.val", 0);
+  myNex.writeNum("bn4.val", 0);
+  myNex.writeNum("bn5.val", 0);
+  myNex.writeNum("bn6.val", 0);
+  myNex.writeNum("bn7.val", 0);
+  myNex.writeNum("bn8.val", 0);
 }
 
 void trigger2()
 { // x02
   band_mode = 1;
   lpf_bank = 2;
+  myNex.writeNum("bn1.val", 0);
+  myNex.writeNum("bn2.val", 1);
+  myNex.writeNum("bn3.val", 0);
+  myNex.writeNum("bn4.val", 0);
+  myNex.writeNum("bn5.val", 0);
+  myNex.writeNum("bn6.val", 0);
+  myNex.writeNum("bn7.val", 0);
+  myNex.writeNum("bn8.val", 0);
 }
 
 void trigger3()
 { // x03
   band_mode = 1;
   lpf_bank = 3;
+  myNex.writeNum("bn1.val", 0);
+  myNex.writeNum("bn2.val", 0);
+  myNex.writeNum("bn3.val", 1);
+  myNex.writeNum("bn4.val", 0);
+  myNex.writeNum("bn5.val", 0);
+  myNex.writeNum("bn6.val", 0);
+  myNex.writeNum("bn7.val", 0);
+  myNex.writeNum("bn8.val", 0);
 }
 
 void trigger4()
 { // x04
   band_mode = 1;
   lpf_bank = 4;
+  myNex.writeNum("bn1.val", 0);
+  myNex.writeNum("bn2.val", 0);
+  myNex.writeNum("bn3.val", 0);
+  myNex.writeNum("bn4.val", 1);
+  myNex.writeNum("bn5.val", 0);
+  myNex.writeNum("bn6.val", 0);
+  myNex.writeNum("bn7.val", 0);
+  myNex.writeNum("bn8.val", 0);
 }
 
 void trigger5()
 { // x05
   band_mode = 1;
   lpf_bank = 5;
+  myNex.writeNum("bn1.val", 0);
+  myNex.writeNum("bn2.val", 0);
+  myNex.writeNum("bn3.val", 0);
+  myNex.writeNum("bn4.val", 0);
+  myNex.writeNum("bn5.val", 1);
+  myNex.writeNum("bn6.val", 0);
+  myNex.writeNum("bn7.val", 0);
+  myNex.writeNum("bn8.val", 0);
 }
 
 void trigger6()
 { // x06
   band_mode = 1;
   lpf_bank = 6;
+  myNex.writeNum("bn1.val", 0);
+  myNex.writeNum("bn2.val", 0);
+  myNex.writeNum("bn3.val", 0);
+  myNex.writeNum("bn4.val", 0);
+  myNex.writeNum("bn5.val", 0);
+  myNex.writeNum("bn6.val", 1);
+  myNex.writeNum("bn7.val", 0);
+  myNex.writeNum("bn8.val", 0);
 }
 
 void trigger7()
 { // x07
   band_mode = 1;
   lpf_bank = 7;
+  myNex.writeNum("bn1.val", 0);
+  myNex.writeNum("bn2.val", 0);
+  myNex.writeNum("bn3.val", 0);
+  myNex.writeNum("bn4.val", 0);
+  myNex.writeNum("bn5.val", 0);
+  myNex.writeNum("bn6.val", 0);
+  myNex.writeNum("bn7.val", 1);
+  myNex.writeNum("bn8.val", 0);
 }
 
 void trigger8()
 { // x08
   band_mode = 1;
   lpf_bank = 8;
+  myNex.writeNum("bn1.val", 0);
+  myNex.writeNum("bn2.val", 0);
+  myNex.writeNum("bn3.val", 0);
+  myNex.writeNum("bn4.val", 0);
+  myNex.writeNum("bn5.val", 0);
+  myNex.writeNum("bn6.val", 0);
+  myNex.writeNum("bn7.val", 0);
+  myNex.writeNum("bn8.val", 1);
 }
 
+void set_ant()
+{
+  // Check last antenna ststus with current value
+  if (antenna2_status != last_antenna2)
+  {
+    if (antenna2_status == HIGH)
+    {
+      digitalWrite(ANT2, HIGH);
+      myNex.writeStr("t23.txt", "B");
+      // antenna2_status = HIGH;
+    }
+    else
+    {
+      digitalWrite(ANT2, LOW);
+      myNex.writeStr("t23.txt", "A");
+      // antenna2_status = LOW;
+    }
+    last_antenna2 = antenna2_status;
+  }
+}
 
 // Antenna2 switch
-void trigger30()
+void trigger30() // x1E
 {
+
   if (antenna2_status == LOW)
   {
     digitalWrite(ANT2, HIGH);
@@ -1625,7 +1780,8 @@ void trigger30()
     myNex.writeStr("t23.txt", "A");
     antenna2_status = LOW;
   }
-} 
+  EEPROM.put(76, antenna2_status);
+}
 
 void trigger9() // Loading variables data to Setting page
 {               // x09
@@ -1640,6 +1796,7 @@ void trigger9() // Loading variables data to Setting page
   myNex.writeNum("sc0.val", ntc1_status);
   myNex.writeNum("sc1.val", ntc2_status);
   myNex.writeNum("sc2.val", dtemp1_status);
+  myNex.writeNum("sc7.val", band8_status);
 
   if (dtemp1_status == 1)
     myNex.writeNum("sc3.val", dtemp2_status);
@@ -1652,7 +1809,7 @@ void trigger9() // Loading variables data to Setting page
   myNex.writeNum("st3.val", protection_po);
   myNex.writeNum("st4.val", protection_vdd);
   myNex.writeNum("st5.val", protection_id);
-  myNex.writeNum("stx0.val", protection_swr);
+  myNex.writeNum("stx0.val", protection_swr_mem);
   myNex.writeNum("st6.val", protection_in);
 
   display_page = 5;
@@ -1678,29 +1835,44 @@ void trigger10() // updating variables data from Setting page and EEPROM
   vband_status = myNex.readNumber("sc4.val");
   bcdband_status = myNex.readNumber("sc5.val");
   rotband_status = myNex.readNumber("sc6.val");
+  band8_status = myNex.readNumber("sc7.val");
 
   protection_temp = myNex.readNumber("st2.val");
   protection_po = myNex.readNumber("st3.val");
   protection_vdd = myNex.readNumber("st4.val");
   protection_id = myNex.readNumber("st5.val");
-  protection_swr = myNex.readNumber("stx0.val");
+  protection_swr_mem = myNex.readNumber("stx0.val");
   protection_in = myNex.readNumber("st6.val");
-
+  protection_swr = (float)protection_swr_mem / 10.0;
   saveEEPROM();
+  myNex.writeNum("settings.t9.pco", 2016);
+  myNex.writeStr("settings.t9.txt", "SETTINGS SAVED");
   display_page = 5;
 }
 
 void trigger11()
 { // x0B HOME SCREEN
   TX_Enable = true;
-
-  // Disable Band 8 (4m button if not selected by setting page)
+  myNex.writeNum("home.n8.val", ANT.maxGraphWatt);
   if (band8_status == 0)
-  {
     myNex.writeStr("vis bn8,0");
-  }
   else
     myNex.writeStr("vis bn8,1");
+
+  if (rotband_status == 0)
+    myNex.writeStr("tsw bt1,0");
+  else
+    myNex.writeStr("tsw bt1,1");
+
+  if (vband_status == 0)
+    myNex.writeStr("tsw bt0,0");
+  else
+    myNex.writeStr("tsw bt0,1");
+
+  if (bcdband_status == 0)
+    myNex.writeStr("tsw bt2,0");
+  else
+    myNex.writeStr("tsw bt2,1");
 
   display_page = 2;
 }
@@ -1774,7 +1946,6 @@ void trigger17()
   b7.lpf = myNex.readNumber("n37.val");
   b8.lpf = myNex.readNumber("n36.val");
   b9.lpf = myNex.readNumber("n35.val");
-  ;
   b10.lpf = myNex.readNumber("n34.val");
   b11.lpf = myNex.readNumber("n33.val");
   saveEEPROM();
@@ -1806,7 +1977,7 @@ void trigger22()
 {
   // x16
   CalibV_in = myNex.readNumber("mcn0.val");
-  CalibV_in = CalibV_in/1000;
+  CalibV_in = CalibV_in / 1000;
   measured_power_in = myNex.readNumber("mcn1.val");
   IN.calibration = CalibV_in * CalibV_in;
   IN.calibration = IN.calibration / measured_power_in;
@@ -1818,7 +1989,7 @@ void trigger23()
 {
   // x17
   CalibV_out = myNex.readNumber("mcn3.val");
-  CalibV_out = CalibV_out/1000;
+  CalibV_out = CalibV_out / 1000;
   measured_power_out = myNex.readNumber("mcn4.val");
   ANT.calibration = CalibV_out * CalibV_out;
   ANT.calibration = ANT.calibration / measured_power_out;
@@ -1872,17 +2043,17 @@ void default_write()
   current_band = 1;
   ANT.calibration = 1;
   IN.calibration = 1;
-  //ADC_ANT.calibration = 900;
-  //ADC_IN.calibration = 100;
+  // ADC_ANT.calibration = 900;
+  // ADC_IN.calibration = 100;
   measured_power_out = 900;
   measured_power_in = 100;
   calibration_ID = 1.0;
-  graph_maxWatt = 1500;
+  graph_maxWatt = 1000;
   graph_maxTemp = 100;
-  protection_po = 1500;
-  protection_swr = 3;
+  protection_po = 1000;
+  protection_swr = 3.0;
   protection_temp = 55;
-  T_pepHOLD = 200;
+  T_pepHOLD = 250;
   PWM_FREQ_KHZ = 25;
   protection_in = 60;
   protection_vdd = 55;
@@ -1924,21 +2095,29 @@ void trigger29()
 
 void alarm_clear()
 {
-  
+
   digitalWrite(RF_IN, LOW);
   digitalWrite(BIAS_ON, LOW);
   digitalWrite(ANT_RXTX, LOW);
   digitalWrite(PROT_OUT, LOW);
-  antswr_status = LOW;
+
   RF_IN_status = LOW;
   BIAS_ON_status = LOW;
   ANT_RXTX_status = LOW;
   PROT_OUT_status = LOW;
+  extprot_status = LOW;
+  inpo_status = LOW;
+  lpfswr_status = LOW;
+  antswr_status = LOW;
+
   alarm_code = 0;
-  myNex.writeNum("home.ER.val",0);
+  // display_error();
+  myNex.writeNum("home.ER.val", 0);
   myNex.writeStr("vis b6,0");
   myNex.writeStr("vis t5,0");
- 
+  delay(500);
+  display_error();
+  SCB_AIRCR = 0x05FA0004; // reboot controller core.
 }
 
 // ALARM CLEAR
@@ -1946,17 +2125,16 @@ void trigger21()
 {
   // x15
   alarm_clear();
-  display_error();
 }
 
 /* ========= INTURRUPT ROUTINES =========*/
 
 // Inturupt routine for External triggered protection signal.
-void int_extprot()
+FASTRUN void int_extprot()
 {
-  digitalWrite(RF_IN, LOW);
-  digitalWrite(BIAS_ON, LOW);
-  digitalWrite(ANT_RXTX, LOW);
+  digitalWriteFast(RF_IN, LOW);
+  digitalWriteFast(BIAS_ON, LOW);
+  digitalWriteFast(ANT_RXTX, LOW);
   if (alarm_code == 0)
     alarm_code = 1;
   extprot_status = HIGH;
@@ -1966,12 +2144,12 @@ void int_extprot()
 }
 
 // Inturupt routine for high ANT SWR
-void int_antswr()
+FASTRUN void int_antswr()
 {
-  digitalWrite(RF_IN, LOW);
-  digitalWrite(BIAS_ON, LOW);
-  digitalWrite(ANT_RXTX, LOW);
-  digitalWrite(PROT_OUT, HIGH);
+  digitalWriteFast(RF_IN, LOW);
+  digitalWriteFast(BIAS_ON, LOW);
+  digitalWriteFast(ANT_RXTX, LOW);
+  digitalWriteFast(PROT_OUT, HIGH);
   alarm_code = 2;
   antswr_status = HIGH;
   RF_IN_status = LOW;
@@ -1981,12 +2159,12 @@ void int_antswr()
 }
 
 // Inturupt routine for high input power
-void int_inpo()
+FASTRUN void int_inpo()
 {
-  digitalWrite(RF_IN, LOW);
-  digitalWrite(BIAS_ON, LOW);
-  digitalWrite(ANT_RXTX, LOW);
-  digitalWrite(PROT_OUT, HIGH);
+  digitalWriteFast(RF_IN, LOW);
+  digitalWriteFast(BIAS_ON, LOW);
+  digitalWriteFast(ANT_RXTX, LOW);
+  digitalWriteFast(PROT_OUT, HIGH);
   alarm_code = 3;
   inpo_status = HIGH;
   RF_IN_status = LOW;
@@ -1996,12 +2174,12 @@ void int_inpo()
 }
 
 // Inturupt routine for high LPF SWR
-void int_lpfswr()
+FASTRUN void int_lpfswr()
 {
-  digitalWrite(RF_IN, LOW);
-  digitalWrite(BIAS_ON, LOW);
-  digitalWrite(ANT_RXTX, LOW);
-  digitalWrite(PROT_OUT, HIGH);
+  digitalWriteFast(RF_IN, LOW);
+  digitalWriteFast(BIAS_ON, LOW);
+  digitalWriteFast(ANT_RXTX, LOW);
+  digitalWriteFast(PROT_OUT, HIGH);
   alarm_code = 4;
   lpfswr_status = HIGH;
   RF_IN_status = LOW;
@@ -2024,25 +2202,23 @@ void tx_sequence()
 {
   if (PTT_status && alarm_code == 0 && TX_Enable)
   {
-    digitalWrite(BIAS_ON, HIGH);
-    digitalWrite(ANT_RXTX, HIGH);
-    digitalWrite(RF_IN, HIGH);
+    digitalWriteFast(BIAS_ON, HIGH);
+    digitalWriteFast(ANT_RXTX, HIGH);
+    digitalWriteFast(RF_IN, HIGH);
     BIAS_ON_status = HIGH;
     ANT_RXTX_status = HIGH;
     RF_IN_status = HIGH;
   }
   else
   {
-    digitalWrite(RF_IN, LOW);
-    digitalWrite(BIAS_ON, LOW);
-    digitalWrite(ANT_RXTX, LOW);
+    digitalWriteFast(RF_IN, LOW);
+    digitalWriteFast(BIAS_ON, LOW);
+    digitalWriteFast(ANT_RXTX, LOW);
     RF_IN_status = LOW;
     BIAS_ON_status = LOW;
     ANT_RXTX_status = LOW;
   }
 }
-
-
 
 void homepage_normalrun()
 {
@@ -2050,6 +2226,7 @@ void homepage_normalrun()
   band_selection();
   display_band(current_band);
   display_lpf(current_lpf);
+  set_ant();
   display_volt(); // Read Volt and Display
   display_ID();   // Read current
   read_temp();    // Read Temp and display
@@ -2076,13 +2253,12 @@ void homepage_alarmrun()
   display_ID();   // Read current
   read_temp();    // Read Temp and display
   fanspeed();     // Set fan speed
-  
 }
 
 void menu_page()
 {
   // nothing to do in this page
-  calibpage_load = false;
+  // calibpage_load = false;
 }
 
 void diagnos_page()
@@ -2098,22 +2274,19 @@ void diagnos_page()
     read_INpower();  // Read Po and SWR of input SWR Bridge
 
     // Show in mV at controller input,
-    myNex.writeNum("dn2.val", (ANT.rawFWD - VFdiode)*1000);
-    myNex.writeNum("dn3.val", (ANT.rawREF - VFdiode)*1000);
-    myNex.writeNum("dn4.val", (LPF.rawFWD - VFdiode)*1000);
-    myNex.writeNum("dn5.val", (LPF.rawREF  - VFdiode)*1000);
-    myNex.writeNum("dn6.val", (IN.rawFWD - VFdiode)*1000);
-    myNex.writeNum("dn7.val", (IN.rawREF - VFdiode)*1000);
-
-    
+    myNex.writeNum("dn2.val", (ANT.rawFWD) * 1000);
+    myNex.writeNum("dn3.val", (ANT.rawREF) * 1000);
+    myNex.writeNum("dn4.val", (LPF.rawFWD) * 1000);
+    myNex.writeNum("dn5.val", (LPF.rawREF) * 1000);
+    myNex.writeNum("dn6.val", (IN.rawFWD) * 1000);
+    myNex.writeNum("dn7.val", (IN.rawREF) * 1000);
 
     fanspeed(); // Set fan speed and display
-    myNex.writeNum("dn9.val", V_now()*1000*ResV);
-    myNex.writeNum("dn10.val", I_now()*1000);
+    myNex.writeNum("dn9.val", V_now() * 1000 * ResV);
+    myNex.writeNum("dn10.val", I_now() * 1000);
 
-    //Serial.print("I:");
-    //Serial.println(I_now());
-
+    // Serial.print("I:");
+    // Serial.println(I_now());
 
     myNex.writeNum("dn11.val", band_rotary() * ref_ADC * 1000); // show Band voltage of rotary swith
     myNex.writeNum("dn12.val", band_volt() * ref_ADC * 1000);   // show auto Band Voltage in mv
@@ -2177,14 +2350,15 @@ void settings_page()
 
 void metercalib_page()
 {
-  if ((millis() - last_metercalib_Refresh) >= metercalib_Refresh){
-  
+  if ((millis() - last_metercalib_Refresh) >= metercalib_Refresh)
+  {
+
     if (calibpage_load == false)
     {
-      myNex.writeNum("mcn3.val", CalibV_out*1000);
+      myNex.writeNum("mcn3.val", CalibV_out * 1000);
       myNex.writeNum("mcn4.val", measured_power_out);
 
-      myNex.writeNum("mcn0.val", CalibV_in*1000);
+      myNex.writeNum("mcn0.val", CalibV_in * 1000);
       myNex.writeNum("mcn1.val", measured_power_in);
       calibpage_load = true;
     }
@@ -2194,23 +2368,22 @@ void metercalib_page()
     {
       myNex.writeNum("n12.val", current_band);
       myNex.writeNum("n6.val", current_lpf);
-    
+
       last_calib_band = current_band;
     }
 
     tx_sequence();
 
     if (PTT_status)
-    { 
-        
+    {
+
       CalibV_out = myNex.readNumber("mcn3.val");
-      CalibV_out = CalibV_out/1000;
+      CalibV_out = CalibV_out / 1000;
       CalibV_in = myNex.readNumber("mcn0.val");
-      CalibV_in = CalibV_in/1000;
+      CalibV_in = CalibV_in / 1000;
 
       maxCalibV_out = ant_fwd_now();
       maxCalibV_in = in_fwd_now();
-     
 
       if (maxCalibV_out > CalibV_out)
         CalibV_out = maxCalibV_out;
@@ -2220,18 +2393,18 @@ void metercalib_page()
 
       if (last_calib_out != CalibV_out)
       {
-        myNex.writeNum("mcn3.val", CalibV_out*1000);
+        myNex.writeNum("mcn3.val", CalibV_out * 1000);
         last_calib_out = CalibV_out;
       }
-    
-    if (last_calib_in != CalibV_in)
+
+      if (last_calib_in != CalibV_in)
       {
-        myNex.writeNum("mcn0.val", CalibV_in*1000);
+        myNex.writeNum("mcn0.val", CalibV_in * 1000);
         last_calib_in = CalibV_in;
       }
-    
+
       peak_ID = myNex.readNumber("mcn6.val");
-      
+
       calib_ID = I_now() * 1000;
       if (calib_ID > peak_ID)
         peak_ID = calib_ID;
@@ -2241,13 +2414,11 @@ void metercalib_page()
         myNex.writeNum("mcn6.val", peak_ID);
         last_peak_ID = peak_ID;
       }
-    
-      }
+    }
 
     last_metercalib_Refresh = millis();
 
-    //delay(50);
-
+    // delay(50);
   }
 }
 /* ======================= Band Calibration page data load ======================= */
@@ -2306,9 +2477,10 @@ void bandcalib_load()
   myNex.writeNum("n33.val", b11.lpf);
 }
 
-
-void bandcalib_page(){
-  if ((millis() - last_bandcalib_Refresh) >= bandcalib_Refresh){
+void bandcalib_page()
+{
+  if ((millis() - last_bandcalib_Refresh) >= bandcalib_Refresh)
+  {
     myNex.writeNum("rot.val", band_rotary());
     myNex.writeNum("volt.val", band_volt());
     myNex.writeNum("bcd.val", band_bcd());
@@ -2333,14 +2505,18 @@ void info_page()
 
 void setup()
 {
-  delay(100);
-  // Serial.begin(9600);
-  // if(debug) Serial.println("*** SETUP START ***");
+  Wire2.begin();
+  delay(1000);
+  Serial.begin(9600);
+  // Serial.println("*** SETUP START ***");
   myNex.begin(115200); // start Nextion Display
 
-  PCF.begin();
-  Serial.println(PCF.isConnected());
-  Serial.println();
+  MCP.begin();
+  MCP.pinMode8(0x00);
+
+  // MCP.write8(LOW);
+
+  analogReadAveraging(4);
 
   // PWMsetup();
   analogWriteFrequency(FAN_1, PWM_FREQ_KHZ * 1000); // Teensy pin changes to 25 kHz
@@ -2349,43 +2525,83 @@ void setup()
   // TEENSY INTARRUPT
 
   // Attach inturupt for external protection detection
-  pinMode(INT_PROT, INPUT_PULLDOWN);
-  attachInterrupt(digitalPinToInterrupt(INT_PROT), int_extprot, RISING);
+  pinMode(INT_PROT, INPUT_PULLUP);
+  delay(100);
+  attachInterrupt(digitalPinToInterrupt(INT_PROT), int_extprot, FALLING);
 
   // Attach inturupt for high swr
   pinMode(INT_ANT, INPUT_PULLUP);
+  delay(100);
   attachInterrupt(digitalPinToInterrupt(INT_ANT), int_antswr, RISING);
 
   // Attach inturupt for high input
   pinMode(INT_IN, INPUT_PULLUP);
+  delay(100);
   attachInterrupt(digitalPinToInterrupt(INT_IN), int_inpo, RISING);
 
   // Attach inturupt for high LPF swr error
   pinMode(INT_LPF, INPUT_PULLUP);
+  delay(100);
   attachInterrupt(digitalPinToInterrupt(INT_LPF), int_lpfswr, RISING);
 
   // Attach inturupt for PTT
   pinMode(PTT_SENSE, INPUT_PULLUP);
+  delay(100);
   attachInterrupt(digitalPinToInterrupt(PTT_SENSE), int_PTT_CHANGE, CHANGE);
 
+  pinMode(NTC1, INPUT_DISABLE);
+  pinMode(NTC2, INPUT_DISABLE);
+
+  pinMode(VCC, INPUT_DISABLE);
+  pinMode(ID, INPUT_DISABLE);
+
+  pinMode(IN_FWD, INPUT_DISABLE);
+  pinMode(IN_REF, INPUT_DISABLE);
+
+  pinMode(LPF_FWD, INPUT_DISABLE);
+  pinMode(LPF_REF, INPUT_DISABLE);
+
+  pinMode(ANT_FWD, INPUT_DISABLE);
+  pinMode(ANT_REF, INPUT_DISABLE);
+
+  pinMode(BAND_V, INPUT_DISABLE);
+  pinMode(ROTARY_POS, INPUT_DISABLE);
   pinMode(BAND_A, INPUT_PULLUP);
   pinMode(BAND_B, INPUT_PULLUP);
   pinMode(BAND_C, INPUT_PULLUP);
   pinMode(BAND_D, INPUT_PULLUP);
 
   pinMode(BIAS_ON, OUTPUT);
+  pinMode(GPIO_O9, OUTPUT);
+  pinMode(GPIO_13, OUTPUT);
+  pinMode(RF_IN, OUTPUT);
+  pinMode(ANT_RXTX, OUTPUT);
+  pinMode(ANT2, OUTPUT);
+  pinMode(Relay_1, OUTPUT);
+  pinMode(PROT_OUT, OUTPUT);
+  pinMode(BIAS_ON, OUTPUT);
+
+  IOMUXC_SW_PAD_CTL_PAD_GPIO_B1_13 |= IOMUXC_PAD_SPEED(1) | IOMUXC_PAD_DSE(4) | IOMUXC_PAD_SRE; // 34
+  IOMUXC_SW_PAD_CTL_PAD_GPIO_B1_02 |= IOMUXC_PAD_SPEED(1) | IOMUXC_PAD_DSE(4) | IOMUXC_PAD_SRE; // 36
+
+  digitalWrite(BIAS_ON, LOW);
+  digitalWrite(RF_IN, LOW);
+  digitalWrite(ANT_RXTX, LOW);
+  digitalWrite(PROT_OUT, LOW);
 
   EEPROM.get(250, default_value);
   if (default_value != 21)
     default_write();
   // default_write();
 
+  // Load variable values and setting parameters from EEPROM
   loadEEPROM();
 
-  /* ==== Temp sensor setup ==== */
+  // ==== Temp sensor setup ====
+
   if (dtemp1_status)
   {
-    sensors.begin(); // Temp sensor
+    sensors.begin();
     sensors.getAddress(tempDeviceAddress, 0);
     sensors.setResolution(tempDeviceAddress, resolution);
     if (dtemp2_status)
@@ -2401,7 +2617,7 @@ void setup()
   last_Temp_Refresh = millis();
 
   // myNex.writeStr("vis d1,0");
-  digitalWrite(BIAS_ON, LOW);
+  trigger11();
   myNex.writeStr("Er1.txt", error_text);
   // if(debug) Serial.println("*** SETUP END ***");
 
@@ -2409,82 +2625,81 @@ void setup()
 
   // band_selection();
 
-  //Serial.print("band:");
-  //Serial.println(current_band);
-  //Serial.print("LPF:");
-  //Serial.println(current_lpf);
+  // Serial.print("band:");
+  // Serial.println(current_band);
+  // Serial.print("LPF:");
+  // Serial.println(current_lpf);
   display_band(current_band);
   display_lpf(current_lpf);
+  set_lpf(current_lpf);
+  set_ant();
 
   display_volt(); // Read Volt and Display
   display_ID();   // Read current
   read_temp();    // Read Temp and display
   fanspeed();
-
 }
 
 void loop()
 {
-  // if(debug) Serial.println("*** LOOP START ***");
-  //  Receive from display if not in TX
-  if (PTT_status != HIGH)
+  while (1)
   {
-    myNex.NextionListen();
-    // if(debug) Serial.println("*** NEX LISTEN ***");
-  }
+    //  Receive from display if not in TX
+    if (PTT_status != HIGH)
+      myNex.NextionListen();
 
-  // Home page tasks
-  if (display_page == 2)
-  {
-    if (alarm_code == 0)
+    // Home page tasks
+    if (display_page == 2)
     {
-      // if(debug) Serial.println("*** HOME NORMAL RUN ***");
-      homepage_normalrun();
+      if (alarm_code == 0)
+      {
+        // if(debug) Serial.println("*** HOME NORMAL RUN ***");
+        homepage_normalrun();
+      }
+
+      else
+      {
+        // if(debug) Serial.println("*** HOME ALARM RUN ***");
+        homepage_alarmrun();
+      }
     }
 
-    else
+    else if (display_page == 3)
     {
-      // if(debug) Serial.println("*** HOME ALARM RUN ***");
-      homepage_alarmrun();
+      // if(debug) Serial.println("*** MENU PAGE ***");
+      menu_page();
     }
-  }
+    else if (display_page == 4)
+    {
+      // if(debug) Serial.println("*** DIAG PAGE ***");
+      diagnos_page();
+    }
+    else if (display_page == 5)
+    {
+      // if(debug) Serial.println("*** SETTING PAGE ***");
+      settings_page();
+    }
+    else if (display_page == 6)
+    {
+      // if(debug) Serial.println("*** METER CALIB PAGE ***");
 
-  else if (display_page == 3)
-  {
-    // if(debug) Serial.println("*** MENU PAGE ***");
-    menu_page();
+      metercalib_page();
+    }
+    else if (display_page == 7)
+    {
+      // if(debug) Serial.println("*** BAND CALIB PAGE ***");
+      bandcalib_page();
+    }
+    else if (display_page == 8)
+    {
+      // if(debug) Serial.println("*** REMOTE PAGE ***");
+      remote_page();
+    }
+    else if (display_page == 9)
+    {
+      // if(debug) Serial.println("*** INFO PAGE ***");
+      info_page();
+    }
+    // delay(1000);
   }
-  else if (display_page == 4)
-  {
-    // if(debug) Serial.println("*** DIAG PAGE ***");
-    diagnos_page();
-  }
-  else if (display_page == 5)
-  {
-    // if(debug) Serial.println("*** SETTING PAGE ***");
-    settings_page();
-  }
-  else if (display_page == 6)
-  {
-    // if(debug) Serial.println("*** METER CALIB PAGE ***");
-    
-    metercalib_page();
-  }
-  else if (display_page == 7)
-  {
-    // if(debug) Serial.println("*** BAND CALIB PAGE ***");
-    bandcalib_page();
-  }
-  else if (display_page == 8)
-  {
-    // if(debug) Serial.println("*** REMOTE PAGE ***");
-    remote_page();
-  }
-  else if (display_page == 9)
-  {
-    // if(debug) Serial.println("*** INFO PAGE ***");
-    info_page();
-  }
-  // delay(1000);
 }
-
