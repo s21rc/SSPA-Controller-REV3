@@ -1,3 +1,5 @@
+PCB V3.0.2 - Probblem of 3.0.1 fixed, not tested yet.
+PCB V3.0.1 has few ground missing and i2c has short- need manual fixing. All other test OK
 PCB V3.0 had slight error (trace overlap) and now solved.
-PCB V3.0.1 is still not tested yet by me.
+
 If you fabricate and try - do at own risk.
