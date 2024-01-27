@@ -1,5 +1,5 @@
 
-/*  Arduino Code (Version 3.x) for S21RC SSPA Controller REV3.x PCB.                       */
+/*  Arduino Code (Version 3.0.2) for S21RC SSPA Controller REV3.0.2 PCB.                    */
 /*                                                                                          */
 /*  Created by Fazlay Rabby S21RC, JUNE, 2023.                                              */
 /*  Released into the public domain.                                                        */
@@ -10,7 +10,7 @@
 /*  If you need any clarification or help please issue a ticket in github.                  */
 /*                                                                                          */
 
-/* For PCB Version REV3.0.2, CODE V 3.0.0, Display: Nextion 5inch (800x480)                     */
+/* For PCB Version REV3.0.2, CODE V 3.0.2, Display: Nextion 800x480 (5 and 7 inch)          */
 
 /*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 /*    THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS   */

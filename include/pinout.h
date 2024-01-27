@@ -1,4 +1,5 @@
 /* ======= Teensy 4.1 PIN assignment ======== */
+/* ======= For REV3.0.1 and 3.0.2 PCB ======= */
 #define UART_DISP Serial1
 
 #define BAND_A 2
