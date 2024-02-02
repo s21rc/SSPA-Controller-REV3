@@ -2,8 +2,8 @@
 /*  Arduino Code (Version 3.0.2) for S21RC SSPA Controller REV3.0.2 PCB.                    */
 /*                                                                                          */
 /*  Created by Fazlay Rabby S21RC, JUNE, 2023.                                              */
-/*  Released into the public domain.                                                        */
 /*                                                                                          */
+/*  RELEASED AS OPEN SOURSE UNDER MIT LICENSE                                               */
 /*  Feel free to use/change the Gerber file for the PCB,                                    */
 /*  display file(nextion TFT) for the display and all codes here.                           */
 /*                                                                                          */
@@ -12,9 +12,9 @@
 
 /* For PCB Version REV3.0.2, CODE V 3.0.2, Display: Nextion 800x480 (5 and 7 inch)          */
 
-/*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-/*    THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS   */
-/*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
+/*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
+/*    THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS. LAST UPDATE: 1745UTC 2FEB24     */
+/*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
 #include "Arduino.h"
 #include <EEPROM.h>
@@ -35,7 +35,7 @@ EasyNex myNex(UART_DISP);
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 DeviceAddress tempDeviceAddress;
-int resolution = 9;
+uint8_t resolution = 9;
 unsigned long last_Temp_Refresh = 0;
 
 float temp_digi1 = 0.0;
@@ -138,9 +138,109 @@ uint8_t vband_status;
 uint8_t bcdband_status;
 uint8_t rotband_status;
 uint8_t band8_status;
+boolean CATband_status;
 
+/* CAT/CIV related variables*/
+byte reqQRG[10];
+uint8_t CATaddress = 0x70;
+uint16_t CATbaud;
+uint8_t CATrig;
+const byte cat_length = 12;
+byte cat_data[cat_length];
+uint16_t cat_MHz;
+uint16_t cat_10KHz;
+uint16_t cat_10Hz;
+boolean newData = false;
+byte startMarker = 0xFE;
+byte endMarker = 0xFD;
+byte cat_byte;
 
+/*
+struct rig
+{
+  String name;
+  // byte Cn_QRG;
 
+};
+rig rig1;
+rig rig2;
+rig rig3;
+rig rig4;
+rig rig5;
+rig rig6;
+rig rig7;
+rig rig8;
+rig rig9;
+rig rig10;
+rig rig11;
+rig rig12;
+*/
+
+/* **********************************RADIO CAT PROFILE *************************************************** */
+
+String rig1 = "IC-7000";
+String rig2 = "No Profile";
+String rig3 = "No Profile";
+String rig4 = "No Profile";
+String rig5 = "No Profile";
+String rig6 = "No Profile";
+String rig7 = "No Profile";
+String rig8 = "No Profile";
+String rig9 = "No Profile";
+String rig10 = "No Profile";
+String rig11 = "No Profile";
+String rig12 = "No Profile";
+
+byte Cn_returnQRG;
+uint8_t address_indx;
+uint8_t Cn_indx;
+uint8_t Sc_indx;
+uint8_t Cn_byte;
+uint8_t Sc_byte;
+
+uint8_t data1_indx;
+uint8_t data2_indx;
+uint8_t data3_indx;
+uint8_t data4_indx;
+uint8_t data5_indx;
+uint8_t ptt_indx;
+
+void RIGprofile()
+{
+
+  switch (CATrig)
+  {
+  case 1:
+    // ICOM IC-7300 CI-V
+    // Frequecy change broadcast from Radio: [0]FE [1]FE [2]00 [3]70 [4]00 [5]XX [6]XX [7]XX [8]XX [9]XX [10]FD
+    // PTT request:
+    // OK message to controller: FE FE E0 94 FB FD
+
+    Cn_returnQRG = 03;
+    address_indx = 3;
+    Cn_byte = 0x00;
+    Cn_indx = 4;
+    Sc_indx = 5;
+    data1_indx = 5;
+    data2_indx = 6;
+    data3_indx = 7;
+    data4_indx = 8;
+    data5_indx = 9;
+
+    // Frequency Query: 0xFE, 0xFE, 0x70, 0xE0, 0x03, 0xFD
+    reqQRG[0] = 0xFE;
+    reqQRG[1] = 0xFE;
+    reqQRG[2] = CATaddress;
+    reqQRG[3] = 0xE0;
+    reqQRG[4] = 0x03;
+    reqQRG[5] = 0xFD;
+
+    break;
+
+  default:
+    break;
+  }
+}
 /* USER DEFINED VARIABLES */
 uint8_t graph_maxSwr = 3;            // = 3; // Scale of the SWR for display
 unsigned long Temp_Refresh = 0;      //
@@ -156,7 +256,7 @@ float ResV1 = 10000.00; // Set R1 of voltage devider
 float ResV2 = 470.00;   // Set R2 of voltage devider
 float ResP1 = 1500.00;  // Set R1 of voltage devider for power/swr input
 float ResP2 = 470.00;   // Set R2 of voltage devider for power/swr input
-int RL = 2530;          // Load Resistor at Current sensor
+uint16_t RL = 2530;     // Load Resistor at Current sensor
 
 uint8_t band_margin = 20; // around 90mV margin for change of voltage reference between SSPA and Radio
 
@@ -214,7 +314,7 @@ unsigned long last_Diag_Refresh = 0;
 unsigned long last_bandcalib_Refresh = 0;
 unsigned long last_metercalib_Refresh = 0;
 
-char error_text[20] = "";
+// char error_text[20] = "";
 uint8_t default_value = 0;
 
 volatile uint8_t alarm_code = 0;
@@ -471,6 +571,10 @@ void loadEEPROM()
   EEPROM.get(155, bcdband_status);
   EEPROM.get(156, rotband_status);
   EEPROM.get(157, band8_status);
+  EEPROM.get(158, CATband_status);
+  EEPROM.get(159, CATrig);
+  EEPROM.get(160, CATbaud); // 2 byte
+  EEPROM.get(162, CATaddress);
 
   EEPROM.get(200, b1);
   EEPROM.get(220, b2);
@@ -521,6 +625,10 @@ void saveEEPROM()
   EEPROM.put(155, bcdband_status);
   EEPROM.put(156, rotband_status);
   EEPROM.put(157, band8_status);
+  EEPROM.put(158, CATband_status);
+  EEPROM.put(159, CATrig);
+  EEPROM.put(160, CATbaud); // 2 byte
+  EEPROM.put(162, CATaddress);
 
   EEPROM.put(200, b1);
   EEPROM.put(220, b2);
@@ -635,7 +743,7 @@ void soft_protection()
 float V_now()
 {
   float currentV = 0;
-    currentV = analogRead(VCC);
+  currentV = analogRead(VCC);
   currentV = (currentV * ref_ADC);
   currentV /= ResV;
   return currentV;
@@ -703,7 +811,7 @@ float lpf_ref_now()
 float in_fwd_now()
 {
   float INFWD = 0.0;
- 
+
   INFWD = analogRead(IN_FWD);
   INFWD = ((INFWD * ref_ADC) / ResP);
   if (INFWD > 0.1)
@@ -716,7 +824,7 @@ float in_fwd_now()
 float in_ref_now()
 {
   float INREF = 0.0;
-   INREF = analogRead(IN_REF);
+  INREF = analogRead(IN_REF);
   INREF = ((INREF * ref_ADC) / ResP);
   if (INREF > 0.1)
     INREF += VFdiode;
@@ -792,7 +900,7 @@ void read_ANTpower()
   // Serial.println(protection_swr);
   // Serial.print("protection_swr_mem: ");
   // Serial.println(protection_swr_mem);
- 
+
   /* === Check if OUTPUT is higher than set value  === */
   if (ANT.powerFWD >= protection_po)
   {
@@ -823,7 +931,7 @@ void read_ANTpower()
 
   if (millis() > (ANT.lastPEP + T_pepHOLD))
     ANT.PEAKpowerFWD = ANT.powerFWD; // clear the peak after hold time
- 
+
   // Efficiency calculation
   if (Veff != 0 && Iprot != 0)
     Eff = 100 * (ANT.powerFWD / (Veff * Iprot));
@@ -837,7 +945,7 @@ void read_LPFpower()
 
   // Calculate Forward power
   if (LPF.rawFWD > VFdiode + 0.1) // only correct for diode voltage when more than zero
-  { 
+  {
     LPF.powerFWD = (LPF.rawFWD * LPF.rawFWD) / ANT.calibration;
   }
   else
@@ -845,7 +953,7 @@ void read_LPFpower()
 
   // Calculate Reflected power
   if (LPF.rawREF > VFdiode + 0.1) // only correct for diode voltage when more than zero
-  { 
+  {
     LPF.powerREF = (LPF.powerREF * LPF.powerREF) / ANT.calibration;
   }
   else
@@ -896,7 +1004,7 @@ void read_INpower()
 
   // Calculate Forward power
   if (IN.rawFWD > VFdiode + 0.1) // only correct for diode voltage when more than zero
-  { 
+  {
     IN.powerFWD = (IN.rawFWD * IN.rawFWD) / IN.calibration;
   }
   else
@@ -911,7 +1019,7 @@ void read_INpower()
     IN.powerREF = 0;
 
   // Calculate SWR
- 
+
   if (IN.rawREF != 0.0)
   {
     IN.SWR = abs((IN.rawFWD + IN.rawREF) / (IN.rawFWD - IN.rawREF));
@@ -998,7 +1106,6 @@ void display_power(bool active)
 
       float graph_limit_watt = (ANT.maxGraphWatt / 100.00);
       ANT.graph_Watt = (ANT.PEAKpowerFWD / graph_limit_watt);
-    
 
       float graph_limit_swr = ((ANT.maxgraphSWR - 1) / 100.00);
       float swr_forgraph = ANT.SWR - 1;
@@ -1432,7 +1539,7 @@ void read_temp()
       myNex.writeNum("j7.val", graph_Temp4);
     }
     else if (display_page == 4)
-    { 
+    {
       // show NTC output in milivolt
       myNex.writeNum("dn0.val", adc_ntc1 * ref_ADC * 1000);
       myNex.writeNum("dn1.val", adc_ntc2 * ref_ADC * 1000);
@@ -1454,6 +1561,77 @@ void read_temp()
 
 /* =========== BAND SELECTION ========== */
 
+void CAT_ReqQRG()
+{
+
+  Serial2.write(reqQRG, sizeof(reqQRG));
+}
+
+int cat2band()
+{
+  if (cat_MHz >= 1 && cat_MHz < 2)
+  {
+    // 160m
+    return 1;
+  }
+  else if (cat_MHz >= 2 && cat_MHz < 4)
+  {
+    // 80m
+    return 2;
+  }
+  else if (cat_MHz >= 4 && cat_MHz < 6)
+  {
+    // 60m
+    return 3;
+  }
+  else if (cat_MHz >= 6 && cat_MHz < 8)
+  {
+    // 40m
+    return 3;
+  }
+  else if (cat_MHz >= 8 && cat_MHz < 12)
+  {
+    // 30m
+    return 4;
+  }
+  else if (cat_MHz >= 12 && cat_MHz < 16)
+  {
+    // 20m
+    return 5;
+  }
+  else if (cat_MHz >= 16 && cat_MHz < 19)
+  {
+    // 17m
+    return 6;
+  }
+  else if (cat_MHz >= 19 && cat_MHz < 22)
+  {
+    // 15m
+    return 7;
+  }
+  else if (cat_MHz >= 22 && cat_MHz < 26)
+  {
+    // 12m
+    return 8;
+  }
+  else if (cat_MHz >= 26 && cat_MHz < 30)
+  {
+    // 10m
+    return 9;
+  }
+  else if (cat_MHz >= 30 && cat_MHz < 60)
+  {
+    // 6m
+    return 10;
+  }
+  else if (cat_MHz >= 60 && cat_MHz < 76)
+  {
+    // 4m
+    return 11;
+  }
+  return 0;
+}
+
 void band_selection()
 {
   if (PTT_status != HIGH)
@@ -1469,15 +1647,11 @@ void band_selection()
           lpf(lpf_bank);
           last_band = current_band;
         }
-
-        myNex.writeNum("bt0.val", 0);
-        myNex.writeNum("bt1.val", 0);
-        myNex.writeNum("bt2.val", 0);
-        myNex.writeNum("bt3.val", 1);
       }
 
       else if (band_mode == 2 && bcdband_status)
       { // BCD
+        // Serial.println("BCD BAND:");
         LCDband_disable();
         current_band = bcd2band(band_bcd());
         if (current_band != last_band)
@@ -1485,10 +1659,6 @@ void band_selection()
 
           lpf_bank = band2lpf(current_band);
           lpf(lpf_bank);
-          myNex.writeNum("bt0.val", 0);
-          myNex.writeNum("bt1.val", 0);
-          myNex.writeNum("bt2.val", 1);
-          myNex.writeNum("bt3.val", 0);
           last_band = current_band;
         }
       }
@@ -1501,10 +1671,27 @@ void band_selection()
 
           lpf_bank = band2lpf(current_band);
           lpf(lpf_bank);
-          myNex.writeNum("bt0.val", 1);
-          myNex.writeNum("bt1.val", 0);
-          myNex.writeNum("bt2.val", 0);
-          myNex.writeNum("bt3.val", 0);
+
+          last_band = current_band;
+        }
+      }
+
+      else if (band_mode == 4 && CATband_status)
+      { // BAND CAT
+
+        LCDband_disable();
+        if (cat_MHz == 0)
+        {
+          CAT_ReqQRG();
+          // newData = true;
+        }
+
+        current_band = cat2band();
+        if (current_band != last_band)
+        {
+          lpf_bank = band2lpf(current_band);
+          lpf(lpf_bank);
+
           last_band = current_band;
         }
       }
@@ -1524,6 +1711,7 @@ void band_selection()
         myNex.writeNum("bt1.val", 1);
         myNex.writeNum("bt2.val", 0);
         myNex.writeNum("bt3.val", 0);
+        myNex.writeNum("bt4.val", 0);
         last_band = current_band;
       }
     }
@@ -1532,7 +1720,7 @@ void band_selection()
 
 /* === Trigger from Nextion Display  === */
 void trigger1() // x01
-{ 
+{
   band_mode = 1;
   lpf_bank = 1;
   myNex.writeNum("bn1.val", 1);
@@ -1546,7 +1734,7 @@ void trigger1() // x01
 }
 
 void trigger2() // x02
-{ 
+{
   band_mode = 1;
   lpf_bank = 2;
   myNex.writeNum("bn1.val", 0);
@@ -1560,7 +1748,7 @@ void trigger2() // x02
 }
 
 void trigger3() // x03
-{ 
+{
   band_mode = 1;
   lpf_bank = 3;
   myNex.writeNum("bn1.val", 0);
@@ -1574,7 +1762,7 @@ void trigger3() // x03
 }
 
 void trigger4() // x04
-{ 
+{
   band_mode = 1;
   lpf_bank = 4;
   myNex.writeNum("bn1.val", 0);
@@ -1588,7 +1776,7 @@ void trigger4() // x04
 }
 
 void trigger5() // x05
-{ 
+{
   band_mode = 1;
   lpf_bank = 5;
   myNex.writeNum("bn1.val", 0);
@@ -1602,7 +1790,7 @@ void trigger5() // x05
 }
 
 void trigger6() // x06
-{ 
+{
   band_mode = 1;
   lpf_bank = 6;
   myNex.writeNum("bn1.val", 0);
@@ -1616,7 +1804,7 @@ void trigger6() // x06
 }
 
 void trigger7() // x07
-{ 
+{
   band_mode = 1;
   lpf_bank = 7;
   myNex.writeNum("bn1.val", 0);
@@ -1630,7 +1818,7 @@ void trigger7() // x07
 }
 
 void trigger8() // x08
-{ 
+{
   band_mode = 1;
   lpf_bank = 8;
   myNex.writeNum("bn1.val", 0);
@@ -1652,13 +1840,12 @@ void set_ant()
     {
       digitalWrite(ANT2, HIGH);
       myNex.writeStr("t23.txt", "B");
-     
     }
     else
     {
       digitalWrite(ANT2, LOW);
       myNex.writeStr("t23.txt", "A");
-         }
+    }
     last_antenna2 = antenna2_status;
   }
 }
@@ -1703,6 +1890,7 @@ void trigger9() // Loading variables data to Setting page
   myNex.writeNum("sc4.val", vband_status);
   myNex.writeNum("sc5.val", bcdband_status);
   myNex.writeNum("sc6.val", rotband_status);
+  myNex.writeNum("sc8.val", CATband_status);
 
   myNex.writeNum("st2.val", protection_temp);
   myNex.writeNum("st3.val", protection_po);
@@ -1735,6 +1923,7 @@ void trigger10() // updating variables data from Setting page and EEPROM
   bcdband_status = myNex.readNumber("sc5.val");
   rotband_status = myNex.readNumber("sc6.val");
   band8_status = myNex.readNumber("sc7.val");
+  CATband_status = myNex.readNumber("sc8.val");
 
   protection_temp = myNex.readNumber("st2.val");
   protection_po = myNex.readNumber("st3.val");
@@ -1750,7 +1939,7 @@ void trigger10() // updating variables data from Setting page and EEPROM
 }
 
 void trigger11()
-{ // x0B HOME SCREEN
+{ // x0B HOME SCREEN initialize
   TX_Enable = true;
   myNex.writeNum("home.n8.val", ANT.maxGraphWatt);
   if (band8_status == 0)
@@ -1773,13 +1962,69 @@ void trigger11()
   else
     myNex.writeStr("tsw bt2,1");
 
+  if (CATband_status == 0)
+  {
+    myNex.writeStr("tsw bt4,0");
+    myNex.writeNum("x5.pco", 0);
+    myNex.writeNum("x6.pco", 0);
+  }
+  else
+  {
+    myNex.writeStr("tsw bt4,1");
+    myNex.writeNum("x5.pco", 2016);
+    myNex.writeNum("x6.pco", 2016);
+    CAT_ReqQRG();
+  }
+
+  touch_status = true;
   display_page = 2;
+  // Serial.print("Band Mode:");
+  // Serial.println(band_mode);
+  // Serial.print("BCD status:");
+  // Serial.println(bcdband_status);
 }
 
 void trigger12()
 { // x0C DIAGNOS PAGE
   TX_Enable = true;
   display_page = 4;
+}
+
+// Update Band Mode buttons
+void display_band_mode()
+{
+  if (band_mode == 1)
+  {
+    myNex.writeNum("bt0.val", 0);
+    myNex.writeNum("bt1.val", 0);
+    myNex.writeNum("bt2.val", 0);
+    myNex.writeNum("bt3.val", 1);
+    myNex.writeNum("bt4.val", 0);
+  }
+  else if (band_mode == 2)
+  {
+    myNex.writeNum("bt0.val", 0);
+    myNex.writeNum("bt1.val", 0);
+    myNex.writeNum("bt2.val", 1);
+    myNex.writeNum("bt3.val", 0);
+    myNex.writeNum("bt4.val", 0);
+  }
+  else if (band_mode == 3)
+  {
+    myNex.writeNum("bt0.val", 1);
+    myNex.writeNum("bt1.val", 0);
+    myNex.writeNum("bt2.val", 0);
+    myNex.writeNum("bt3.val", 0);
+    myNex.writeNum("bt4.val", 0);
+  }
+  else if (band_mode == 4)
+  {
+    myNex.writeNum("bt0.val", 0);
+    myNex.writeNum("bt1.val", 0);
+    myNex.writeNum("bt2.val", 0);
+    myNex.writeNum("bt3.val", 0);
+    myNex.writeNum("bt4.val", 1);
+  }
 }
 
 // APPLY button press for ROTARY data in Band Calibration page
@@ -1855,6 +2100,8 @@ void trigger18()
 {
   // x12
   band_mode = 3;
+  EEPROM.put(70, band_mode);
+  display_band_mode();
 }
 
 // BCD button
@@ -1862,6 +2109,8 @@ void trigger19()
 {
   // x13
   band_mode = 2;
+  EEPROM.put(70, band_mode);
+  display_band_mode();
 }
 
 // TOUCH button
@@ -1869,6 +2118,8 @@ void trigger20()
 {
   // x14
   band_mode = 1;
+  EEPROM.put(70, band_mode);
+  display_band_mode();
 }
 
 // APPLY Power in calibration
@@ -1972,6 +2223,8 @@ void default_write()
   b11 = {4, 8, 11, 1100, 1100};
 
   band8_status = 1;
+  CATband_status = 0;
+  CATrig = 1;
 
   ntc1_status = 0;
   ntc2_status = 0;
@@ -1990,6 +2243,112 @@ void trigger29()
 {
   // x1D
   default_write();
+}
+
+int x2i(char *s)
+{
+  int x = 0;
+  for (;;)
+  {
+    char c = *s;
+    if (c >= '0' && c <= '9')
+    {
+      x *= 16;
+      x += c - '0';
+    }
+    else if (c >= 'A' && c <= 'F')
+    {
+      x *= 16;
+      x += (c - 'A') + 10;
+    }
+    else if (c >= 'a' && c <= 'f')
+    {
+      x *= 16;
+      x += (c - 'a') + 10;
+    }
+    else
+      break;
+    s++;
+  }
+  return x;
+}
+
+void testCAT()
+{
+  char buff[3];
+
+  CATrig = myNex.readNumber("catrig.val");
+  CATbaud = myNex.readNumber("n40.val");
+
+  myNex.readStr("t13.txt").toCharArray(buff, 3);
+  CATaddress = x2i(buff);
+
+  RIGprofile();
+  CAT_ReqQRG();
+}
+
+// Load CAT page
+void trigger31()
+{
+  // x1F
+  CAT_ReqQRG();
+  TX_Enable = false;
+
+  String CATaddress_hex = String(CATaddress, HEX);
+  myNex.writeStr("t13.txt", CATaddress_hex);
+  myNex.writeNum("n40.val", CATbaud);
+  myNex.writeNum("catrig.val", CATrig);
+
+  myNex.writeStr("t1.txt", rig1);
+  myNex.writeStr("t2.txt", rig2);
+  myNex.writeStr("t3.txt", rig3);
+  myNex.writeStr("t4.txt", rig4);
+  myNex.writeStr("t5.txt", rig5);
+  myNex.writeStr("t6.txt", rig6);
+  myNex.writeStr("t7.txt", rig7);
+  myNex.writeStr("t8.txt", rig8);
+  myNex.writeStr("t9.txt", rig9);
+  myNex.writeStr("t10.txt", rig10);
+  myNex.writeStr("t11.txt", rig11);
+  myNex.writeStr("t12.txt", rig12);
+  display_page = 10;
+}
+
+// TEST CAT BUTTON
+void trigger32()
+{
+  // x20
+  testCAT();
+}
+
+// CAT SETTINGS SAVE
+void trigger34()
+{
+  // x22
+
+  char buff[3];
+
+  CATrig = myNex.readNumber("catrig.val");
+  CATbaud = myNex.readNumber("n40.val");
+
+  myNex.readStr("t13.txt").toCharArray(buff, 3);
+  CATaddress = x2i(buff);
+  EEPROM.put(159, CATrig);
+  EEPROM.put(160, CATbaud);
+  EEPROM.put(162, CATaddress);
+  Serial2.end();
+  Serial2.begin(CATbaud);
+  RIGprofile();
+}
+
+// BAND SELECTION "CAT"
+void trigger35()
+{
+  // x23
+  band_mode = 4;
+  EEPROM.put(70, band_mode);
+  display_band_mode();
+  CAT_ReqQRG();
 }
 
 void alarm_clear()
@@ -2024,6 +2383,92 @@ void trigger21()
 {
   // x15
   alarm_clear();
+}
+
+/* ************************* CAT SECTION ****************** */
+
+// Convert "Binary coded decimal" HEX value to Integer
+int bcd2int(byte bcd_hex)
+{
+  int cat_temp;
+  cat_temp = bcd_hex / 16;
+  cat_temp = ((cat_temp * 10) + (bcd_hex - (cat_temp * 16)));
+  return cat_temp;
+}
+
+// Receive CAT data from Serial port Serial2
+void listenCAT()
+{
+  static boolean recvInProgress = false;
+  static byte ndx = 0;
+
+  while (Serial2.available() > 0 && newData == false)
+  {
+    cat_byte = Serial2.read();
+
+    if (recvInProgress == true)
+    {
+      if (cat_byte != endMarker)
+      {
+        // cat_data[ndx] = bcd2int(cat_byte);
+        cat_data[ndx] = cat_byte;
+        ndx++;
+        if (ndx >= cat_length)
+        {
+          ndx = cat_length - 1;
+        }
+      }
+      else
+      {
+        cat_data[ndx] = '\0'; // terminate the string
+        recvInProgress = false;
+        ndx = 0;
+        newData = true;
+      }
+    }
+
+    else if (cat_byte == startMarker)
+    {
+      recvInProgress = true;
+    }
+  }
+}
+
+void ShowCatData()
+{
+  if (newData == true)
+  {
+
+    if ((cat_data[Cn_indx - 1] == Cn_byte) || (cat_data[Cn_indx - 1] == Cn_returnQRG)) // Only take serial data which has frequency data, ignore other data
+    {
+      if (cat_data[address_indx - 1] == CATaddress) // Check if the data is coming from selected Radio
+      {
+        cat_MHz = bcd2int(cat_data[data5_indx - 1]) * 100;
+        cat_MHz = cat_MHz + bcd2int(cat_data[data4_indx - 1]);
+
+        cat_10KHz = cat_MHz * 100;
+        cat_10KHz = cat_10KHz + bcd2int(cat_data[data3_indx - 1]);
+        cat_10Hz = bcd2int(cat_data[data2_indx - 1]) * 100;
+        cat_10Hz = cat_10Hz + bcd2int(cat_data[data1_indx - 1]);
+        myNex.writeNum("x5.val", cat_10KHz);
+        myNex.writeNum("x6.val", cat_10Hz);
+        newData = false;
+      }
+      else
+        newData = false;
+    }
+    else
+      newData = false;
+  }
+
+  else
+    newData = false;
+}
+
+void cat_page()
+{
+  listenCAT();
+  ShowCatData();
 }
 
 /* ========= INTURRUPT ROUTINES =========*/
@@ -2140,6 +2585,8 @@ void homepage_normalrun()
   }
   else
     display_power(false); // Display zero power
+
+  ShowCatData();
 }
 
 void homepage_alarmrun()
@@ -2152,6 +2599,8 @@ void homepage_alarmrun()
   display_ID();   // Read current
   read_temp();    // Read Temp and display
   fanspeed();     // Set fan speed
+
+  ShowCatData();
 }
 
 void menu_page()
@@ -2407,12 +2856,13 @@ void setup()
   Wire2.begin();
   delay(1000);
   Serial.begin(9600);
+
   // Serial.println("*** SETUP START ***");
-  myNex.begin(115200); // start Nextion Display
+  myNex.begin(921600); // start Nextion Display
 
   MCP.begin();
   MCP.pinMode8(0x00);
- 
+
   analogReadAveraging(4);
 
   // PWMsetup();
@@ -2494,6 +2944,9 @@ void setup()
   // Load variable values and setting parameters from EEPROM
   loadEEPROM();
 
+  // Start CAT
+  Serial2.begin(CATbaud);
+  myNex.writeNum("cat.catrig.val", CATrig);
   // ==== Temp sensor setup ====
 
   if (dtemp1_status)
@@ -2513,17 +2966,18 @@ void setup()
   Temp_Refresh = 750 / (1 << (12 - resolution));
   last_Temp_Refresh = millis();
 
-  
   trigger11();
-  myNex.writeStr("Er1.txt", error_text);
+  myNex.writeStr("Er1.txt", "");
   // Serial.println("*** SETUP END ***");
 
   ANT.maxgraphSWR = 3;
 
-   // Serial.print("band:");
+  // Serial.print("band:");
   // Serial.println(current_band);
   // Serial.print("LPF:");
   // Serial.println(current_lpf);
+
+  display_band_mode();
   display_band(current_band);
   display_lpf(current_lpf);
   set_lpf(current_lpf);
@@ -2533,15 +2987,21 @@ void setup()
   display_ID();   // Read current
   read_temp();    // Read Temp and display
   fanspeed();
+  RIGprofile(); // Load Radio CAT profile
+  CAT_ReqQRG(); // Request radio to send frequency
 }
 
 void loop()
 {
   while (1)
   {
+    listenCAT();
+
     //  Receive from display if not in TX
     if (PTT_status != HIGH)
+    {
       myNex.NextionListen();
+    }
 
     // Home page tasks
     if (display_page == 2)
@@ -2595,5 +3055,10 @@ void loop()
       // Serial.println("*** INFO PAGE ***");
       info_page();
     }
-   }
+    else if (display_page == 10)
+    {
+      // Serial.println("*** CAT PAGE ***");
+      cat_page();
+    }
+  }
 }
