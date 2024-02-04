@@ -155,41 +155,20 @@ byte startMarker = 0xFE;
 byte endMarker = 0xFD;
 byte cat_byte;
 
-/*
-struct rig
-{
-  String name;
-  // byte Cn_QRG;
-
-};
-rig rig1;
-rig rig2;
-rig rig3;
-rig rig4;
-rig rig5;
-rig rig6;
-rig rig7;
-rig rig8;
-rig rig9;
-rig rig10;
-rig rig11;
-rig rig12;
-*/
-
 /* **********************************RADIO CAT PROFILE *************************************************** */
 
 String rig1 = "IC-7000";
-String rig2 = "No Profile";
-String rig3 = "No Profile";
-String rig4 = "No Profile";
-String rig5 = "No Profile";
-String rig6 = "No Profile";
-String rig7 = "No Profile";
-String rig8 = "No Profile";
-String rig9 = "No Profile";
-String rig10 = "No Profile";
-String rig11 = "No Profile";
-String rig12 = "No Profile";
+String rig2 = "No Profile";  // rename to add new radio profile
+String rig3 = "No Profile";  // rename to add new radio profile
+String rig4 = "No Profile";  // rename to add new radio profile
+String rig5 = "No Profile";  // rename to add new radio profile
+String rig6 = "No Profile";  // rename to add new radio profile
+String rig7 = "No Profile";  // rename to add new radio profile
+String rig8 = "No Profile";  // rename to add new radio profile
+String rig9 = "No Profile";  // rename to add new radio profile
+String rig10 = "No Profile"; // rename to add new radio profile
+String rig11 = "No Profile"; // rename to add new radio profile
+String rig12 = "No Profile"; // rename to add new radio profile
 
 byte Cn_returnQRG;
 uint8_t address_indx;
@@ -237,6 +216,49 @@ void RIGprofile()
 
     break;
 
+  case 2:
+    // Radiio profile will go here
+    break;
+
+  case 3:
+    // Radiio profile will go here
+    break;
+
+  case 4:
+    // Radiio profile will go here
+    break;
+
+  case 5:
+    // Radiio profile will go here
+    break;
+
+  case 6:
+    // Radiio profile will go here
+    break;
+
+  case 7:
+    // Radiio profile will go here
+    break;
+
+  case 8:
+    // Radiio profile will go here
+    break;
+
+  case 9:
+    // Radiio profile will go here
+    break;
+
+  case 10:
+    // Radiio profile will go here
+    break;
+
+  case 11:
+      // Radiio profile will go here
+      break;
+
+      case 12:
+    // Radiio profile will go here
+    break;
   default:
     break;
   }
