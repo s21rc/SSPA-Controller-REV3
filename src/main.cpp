@@ -13,7 +13,7 @@
 /* For PCB Version REV3.0.2, CODE V 3.0.2, Display: Nextion 800x480 (5 and 7 inch)          */
 
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-/*    THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS. LAST UPDATE: 1745UTC 2FEB24     */
+/*    THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS. LAST UPDATE: 1600UTC 4FEB24     */
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
 #include "Arduino.h"
