@@ -318,7 +318,7 @@ unsigned long last_metercalib_Refresh = 0;
 uint8_t default_value = 0;
 
 volatile uint8_t alarm_code = 0;
-uint8_t last_alarm_code = 0;
+uint8_t last_alarm_code = 99;
 
 uint8_t V = 0;
 uint8_t lastV = 0;
