@@ -13,7 +13,7 @@
 /* For PCB Version REV3.0.2, CODE V 3.0.2, Display: Nextion 800x480 (5 and 7 inch)          */
 
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-/*    THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS. LAST UPDATE: 1600UTC 4FEB24     */
+/*    THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS. LAST UPDATE: 1700UTC 7FEB24     */
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
 #include "Arduino.h"
@@ -342,11 +342,11 @@ uint8_t default_value = 0;
 volatile uint8_t alarm_code = 0;
 uint8_t last_alarm_code = 99;
 
-uint8_t V = 0;
-uint8_t lastV = 0;
+uint16_t V = 0;
+uint16_t lastV = 0;
 float ResV = ResV2 / (ResV1 + ResV2);
-uint8_t I;
-uint8_t lastI = 0;
+uint16_t I;
+uint16_t lastI = 0;
 
 uint8_t graph_watt = 0;
 uint8_t graph_Temp1 = 0;
