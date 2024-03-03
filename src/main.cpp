@@ -1,5 +1,5 @@
 
-/*  Arduino Code (Version 3.0.2) for S21RC SSPA Controller REV3.0.2 PCB.                    */
+/*  Arduino Code (Version 3.0.3) for S21RC SSPA Controller REV3.0.2 PCB.                    */
 /*                                                                                          */
 /*  Created by Fazlay Rabby S21RC, JUNE, 2023.                                              */
 /*                                                                                          */
@@ -10,11 +10,12 @@
 /*  If you need any clarification or help please issue a ticket in github.                  */
 /*                                                                                          */
 
-/* For PCB Version REV3.0.2, CODE V 3.0.2, Display: Nextion 800x480 (5 and 7 inch)          */
+/* For PCB Version REV3.0.2, CODE V 3.0.3, Display: Nextion 800x480 (5 and 7 inch)          */
 
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-/*    THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS. LAST UPDATE: 1700UTC 7FEB24     */
+/* THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS. LAST UPDATE: 1700UTC 3 MARCH 2024  */
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
+
 
 #include "Arduino.h"
 #include <EEPROM.h>
@@ -1462,7 +1463,7 @@ void display_ID()
 
   if ((millis() - last_ID_Refresh) >= ID_Refresh && lastI != I)
   {
-    myNex.writeNum("Ca.val", I);
+    myNex.writeNum("x4.val", I);
     last_ID_Refresh = millis();
     lastI = I;
   }
