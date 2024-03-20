@@ -13,9 +13,8 @@
 /* For PCB Version REV3.0.2, CODE V 3.0.3, Display: Nextion 800x480 (5 and 7 inch)          */
 
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-/* THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS. LAST UPDATE: 1700UTC 3 MARCH 2024  */
+/* THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS. LAST UPDATE:  21 MARCH 2024  */
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-
 
 #include "Arduino.h"
 #include <EEPROM.h>
@@ -26,6 +25,24 @@
 #include "EasyNextionLibrary.h" // https://github.com/Seithan/EasyNextionLibrary
 #include <MCP23008.h>           //https://registry.platformio.org/libraries/robtillaart/MCP23008
 #include <pinout.h>
+
+String coreV = "3.0.3";
+String remoteV = "0.0.0";
+
+int BIAS_DELAY = 35; // ANT TX/RX relay takes approx 15ms+15ms to energize, depends on relay
+int RFIN_DELAY = 0;
+
+/*==== EXTERNAL PROTECTION BOARD HARD RESET ====== */
+bool hard_reset = true; // make true to enable hard reset. use Relay-1 (RL-1)
+
+/* =============DEBUG PURPOSE ==============*/
+/* Enable one by one once the PA is working */
+
+uint8_t ext_prot_enable = 0;
+uint8_t ant_prot_enable = 0;
+uint8_t lpf_prot_enable = 0;
+uint8_t in_prot_enable = 0;
+uint8_t ext_prot_lowActive = 0;
 
 MCP23008 MCP(0x20, &Wire2);
 
@@ -56,6 +73,8 @@ float temp_ntc1 = 0.0;
 float temp_ntc2 = 0.0;
 float last_temp_ntc1 = 0.0;
 float last_temp_ntc2 = 0.0;
+
+float temp_max = 0.0;
 
 /* =========== Variable for inturrupt status ============*/
 volatile bool extprot_status = LOW;
@@ -118,10 +137,9 @@ band b11;
 uint8_t band_mode;
 
 uint16_t protection_po;
-float protection_swr;
-uint8_t protection_swr_mem;
+
 uint8_t protection_temp;
-uint8_t protection_in;
+
 uint8_t protection_vdd;
 uint8_t protection_id;
 
@@ -254,10 +272,10 @@ void RIGprofile()
     break;
 
   case 11:
-      // Radiio profile will go here
-      break;
+    // Radiio profile will go here
+    break;
 
-      case 12:
+  case 12:
     // Radiio profile will go here
     break;
   default:
@@ -270,7 +288,7 @@ unsigned long Temp_Refresh = 0;      //
 unsigned long Display_Refresh = 500; // refresh Temp display every N mili sec, set as per your liking
 unsigned long Volt_Refresh = 500;    // refresh V display every N mili sec, set as per your liking
 unsigned long ID_Refresh = 500;      // refresh I display every N mili sec, set as per your liking
-unsigned long Effi_Refresh = 500;    // refresh Efficiency display every N mili sec, set as per your liking
+// unsigned long Effi_Refresh = 500;    // refresh Efficiency display every N mili sec, set as per your liking
 unsigned long Power_Refresh = 200;
 unsigned long Diag_Refresh = 200;
 unsigned long bandcalib_Refresh = 200;
@@ -279,7 +297,7 @@ float ResV1 = 10000.00; // Set R1 of voltage devider
 float ResV2 = 470.00;   // Set R2 of voltage devider
 float ResP1 = 1500.00;  // Set R1 of voltage devider for power/swr input
 float ResP2 = 470.00;   // Set R2 of voltage devider for power/swr input
-uint16_t RL = 2530;     // Load Resistor at Current sensor
+uint16_t RL = 1528;     // Load Resistor at Current sensor [Total resistance between BTS current output pin and ground]
 
 uint8_t band_margin = 20; // around 90mV margin for change of voltage reference between SSPA and Radio
 
@@ -289,7 +307,7 @@ float ref_ADC = (3.3 / 1024); // Refrence is 3.3v for Teensy ADC
 uint16_t measured_power_out;
 uint16_t measured_power_in;
 
-float VFdiode = 0.3; //
+float VFdiode = 0.6; // Total voltage drop from SWR bridge AC side to Controller. Schottky Barrier 0.3, Silicon 0.6.
 
 float maxCalibV_out;
 float CalibV_out;
@@ -301,13 +319,13 @@ uint8_t last_calib_band = 99;
 uint16_t last_calib_out = 0;
 uint16_t last_calib_in = 0;
 
-float calibration_ID = 1.0;
+float calibration_ID;
 uint16_t calib_ID = 0;
 uint16_t peak_ID = 0;
 uint16_t last_peak_ID = 0;
 
 /* ======== Other variables ======== */
-uint8_t Eff = 0;
+// uint8_t Eff = 0;
 uint8_t display_page = 2;
 
 bool touch_status = true;
@@ -565,19 +583,19 @@ void loadEEPROM()
   EEPROM.get(504, CalibV_in);
   EEPROM.get(508, measured_power_out);
   EEPROM.get(512, measured_power_in);
-  EEPROM.get(516, calibration_ID);
+
   EEPROM.get(520, ANT.calibration);
   EEPROM.get(524, IN.calibration);
+  EEPROM.get(528, calibration_ID);
 
   EEPROM.get(21, ANT.maxGraphWatt);
   EEPROM.get(25, graph_maxTemp);
   EEPROM.get(30, protection_po);
-  EEPROM.get(35, protection_swr_mem);
 
   EEPROM.get(40, protection_temp);
   EEPROM.get(45, T_pepHOLD);
   EEPROM.get(50, PWM_FREQ_KHZ);
-  EEPROM.get(55, protection_in);
+
   EEPROM.get(60, protection_vdd);
   EEPROM.get(65, protection_id);
 
@@ -599,6 +617,11 @@ void loadEEPROM()
   EEPROM.get(160, CATbaud); // 2 byte
   EEPROM.get(162, CATaddress);
 
+  EEPROM.get(166, ant_prot_enable);
+  EEPROM.get(167, lpf_prot_enable);
+  EEPROM.get(168, in_prot_enable);
+  EEPROM.get(169, ext_prot_lowActive);
+
   EEPROM.get(200, b1);
   EEPROM.get(220, b2);
   EEPROM.get(240, b3);
@@ -610,8 +633,6 @@ void loadEEPROM()
   EEPROM.get(360, b9);
   EEPROM.get(380, b10);
   EEPROM.get(400, b11);
-
-  protection_swr = (float)protection_swr_mem / 10.0;
 }
 
 void saveEEPROM()
@@ -620,18 +641,19 @@ void saveEEPROM()
   EEPROM.put(504, CalibV_in);
   EEPROM.put(508, measured_power_out);
   EEPROM.put(512, measured_power_in);
-  EEPROM.put(516, calibration_ID);
+
   EEPROM.put(520, ANT.calibration);
   EEPROM.put(524, IN.calibration);
+  EEPROM.put(528, calibration_ID);
 
   EEPROM.put(21, ANT.maxGraphWatt);
   EEPROM.put(25, graph_maxTemp);
   EEPROM.put(30, protection_po);
-  EEPROM.put(35, protection_swr_mem);
+
   EEPROM.put(40, protection_temp);
   EEPROM.put(45, T_pepHOLD);
   EEPROM.put(50, PWM_FREQ_KHZ);
-  EEPROM.put(55, protection_in);
+
   EEPROM.put(60, protection_vdd);
   EEPROM.put(65, protection_id);
 
@@ -652,6 +674,11 @@ void saveEEPROM()
   EEPROM.put(159, CATrig);
   EEPROM.put(160, CATbaud); // 2 byte
   EEPROM.put(162, CATaddress);
+
+  EEPROM.put(166, ant_prot_enable);
+  EEPROM.put(167, lpf_prot_enable);
+  EEPROM.put(168, in_prot_enable);
+  EEPROM.put(169, ext_prot_lowActive);
 
   EEPROM.put(200, b1);
   EEPROM.put(220, b2);
@@ -767,8 +794,8 @@ float V_now()
 {
   float currentV = 0;
   currentV = analogRead(VCC);
-  currentV = (currentV * ref_ADC);
-  currentV /= ResV;
+  currentV = (currentV * ref_ADC) / ResV;
+  // currentV /= ResV;
   return currentV;
 }
 
@@ -874,8 +901,8 @@ void display_volt()
 void read_ANTpower()
 {
 
-  float Veff = V_now();
-  float Iprot = I_now();
+  // float Veff = V_now();
+  // float Iprot = I_now();
 
   ANT.rawFWD = ant_fwd_now();
   ANT.rawREF = ant_ref_now();
@@ -886,7 +913,7 @@ void read_ANTpower()
   // Serial.println(ANT.rawREF);
 
   // Calculate Forward power
-  if (ANT.rawFWD > VFdiode + 0.1)
+  if (ANT.rawFWD > 0.1)
   { // only correct for diode voltage when more than zero
     ANT.powerFWD = (ANT.rawFWD * ANT.rawFWD) / ANT.calibration;
     // Serial.println("ANT.rawFWD > VFdiode");
@@ -895,7 +922,7 @@ void read_ANTpower()
     ANT.powerFWD = 0;
 
   // Calculate Reflected power
-  if (ANT.rawREF > VFdiode + 0.1)
+  if (ANT.rawREF > 0.1)
   {
     ANT.powerREF = (ANT.rawREF * ANT.rawREF) / ANT.calibration;
     // Serial.println("ANT.rawFWD > VFdiode");
@@ -919,30 +946,12 @@ void read_ANTpower()
 
   // Serial.print("ANT SWR: ");
   // Serial.println(ANT.SWR);
-  // Serial.print("protection_swr: ");
-  // Serial.println(protection_swr);
-  // Serial.print("protection_swr_mem: ");
-  // Serial.println(protection_swr_mem);
 
   /* === Check if OUTPUT is higher than set value  === */
   if (ANT.powerFWD >= protection_po)
   {
     soft_protection();
     alarm_code = 6;
-  }
-
-  /* === Check if SWR is higher than set value  === */
-  if (ANT.SWR >= protection_swr)
-  {
-    soft_protection();
-    alarm_code = 7;
-  }
-
-  /* === Check current vs Output Power to see if LPF mismatch  === */
-  if (Iprot >= 10.0 && ANT.powerFWD <= 100)
-  {
-    soft_protection();
-    alarm_code = 8;
   }
 
   // hold peak
@@ -952,22 +961,22 @@ void read_ANTpower()
     ANT.PEAKpowerFWD = ANT.powerFWD;
   }
 
-  if (millis() > (ANT.lastPEP + T_pepHOLD))
+  if (millis() > (ANT.lastPEP + 5000))
     ANT.PEAKpowerFWD = ANT.powerFWD; // clear the peak after hold time
 
-  // Efficiency calculation
-  if (Veff != 0 && Iprot != 0)
-    Eff = 100 * (ANT.powerFWD / (Veff * Iprot));
+  /*
+    // Efficiency calculation
+    if (Veff != 0 && Iprot != 0)
+      Eff = 100 * (ANT.powerFWD / (Veff * Iprot)); */
 }
 
 void read_LPFpower()
 {
-
   LPF.rawFWD = lpf_fwd_now();
   LPF.rawREF = lpf_ref_now();
 
   // Calculate Forward power
-  if (LPF.rawFWD > VFdiode + 0.1) // only correct for diode voltage when more than zero
+  if (LPF.rawFWD > 0.1) // only correct for diode voltage when more than zero
   {
     LPF.powerFWD = (LPF.rawFWD * LPF.rawFWD) / ANT.calibration;
   }
@@ -975,9 +984,9 @@ void read_LPFpower()
     LPF.powerFWD = 0;
 
   // Calculate Reflected power
-  if (LPF.rawREF > VFdiode + 0.1) // only correct for diode voltage when more than zero
+  if (LPF.rawREF > 0.1) // only correct for diode voltage when more than zero
   {
-    LPF.powerREF = (LPF.powerREF * LPF.powerREF) / ANT.calibration;
+    LPF.powerREF = (LPF.rawREF * LPF.rawREF) / ANT.calibration;
   }
   else
     LPF.powerREF = 0;
@@ -990,23 +999,15 @@ void read_LPFpower()
     LPF.SWR = 1.0;
 
   /* === Check if OUTPUT is higher than set value  === */
+  /*
   if (LPF.powerFWD >= protection_po)
   {
-    // Serial.println("Alarm 9 Prot PO");
-    // Serial.println(ANT.calibration);
-    // Serial.println(LPF.powerFWD);
-    // Serial.println(protection_po);
-
     soft_protection();
     alarm_code = 9;
   }
+  */
 
   /* === Check if SWR is higher than set value  === */
-  if (LPF.SWR >= protection_swr)
-  {
-    soft_protection();
-    alarm_code = 10;
-  }
 
   // hold peak
   if (LPF.powerFWD >= LPF.PEAKpowerFWD)
@@ -1015,7 +1016,7 @@ void read_LPFpower()
     LPF.PEAKpowerFWD = LPF.powerFWD;
   }
 
-  if (millis() > (LPF.lastPEP + T_pepHOLD))
+  if (millis() > (LPF.lastPEP + long(T_pepHOLD)))
     LPF.PEAKpowerFWD = LPF.powerFWD; // clear the peak after hold time
 }
 
@@ -1026,7 +1027,7 @@ void read_INpower()
   IN.rawREF = in_ref_now();
 
   // Calculate Forward power
-  if (IN.rawFWD > VFdiode + 0.1) // only correct for diode voltage when more than zero
+  if (IN.rawFWD > 0.1) // only correct for diode voltage when more than zero
   {
     IN.powerFWD = (IN.rawFWD * IN.rawFWD) / IN.calibration;
   }
@@ -1034,7 +1035,7 @@ void read_INpower()
     IN.powerFWD = 0;
 
   // Calculate Reflected power
-  if (IN.rawREF > VFdiode + 0.1)
+  if (IN.rawREF > 0.1)
   {
     IN.powerREF = (IN.rawREF * IN.rawREF) / IN.calibration;
   }
@@ -1050,13 +1051,6 @@ void read_INpower()
   else
     IN.SWR = 1.0;
 
-  /* === Check if OUTPUT is higher than set value  === */
-
-  if (IN.powerFWD >= protection_in)
-  {
-    soft_protection();
-    alarm_code = 11;
-  }
   // hold peak
   if (IN.powerFWD >= IN.PEAKpowerFWD)
   {
@@ -1064,7 +1058,7 @@ void read_INpower()
     IN.PEAKpowerFWD = IN.powerFWD;
   }
 
-  if (millis() > (IN.lastPEP + T_pepHOLD))
+  if (millis() > (IN.lastPEP + long(T_pepHOLD)))
     IN.PEAKpowerFWD = IN.powerFWD; // clear the peak after hold time
 }
 
@@ -1079,7 +1073,7 @@ void update_display()
   myNex.writeNum("n4.val", ANT.powerREF);
   myNex.writeNum("n5.val", LPF.powerFWD);
   myNex.writeNum("n6.val", LPF.powerREF);
-  myNex.writeNum("n7.val", Eff);
+  myNex.writeNum("x7.val", LPF.swr_display);
 
   myNex.writeNum("x0.val", ANT.swr_display);
   myNex.writeNum("x1.val", ANT.swr_display);
@@ -1108,8 +1102,6 @@ void update_display()
   IN.graph_Watt = 0;
   IN.swr_display = 10;
   IN.graphSWR = 0;
-
-  Eff = 0;
 }
 
 void display_power(bool active)
@@ -1122,6 +1114,10 @@ void display_power(bool active)
       ANT.swr_display = (ANT.SWR * 10) + 0.5; //// Float x 10 and convert to int with rounding
       if (ANT.swr_display < 10)
         ANT.swr_display = 10; // SWR cannot be lower than 1.0
+
+      LPF.swr_display = (LPF.SWR * 10) + 0.5; //// Float x 10 and convert to int with rounding
+      if (LPF.swr_display < 10)
+        LPF.swr_display = 10; // SWR cannot be lower than 1.0
 
       IN.swr_display = (IN.SWR * 10) + 0.5; //// Float x 10 and convert to int with rounding
       if (IN.swr_display < 10)
@@ -1136,7 +1132,6 @@ void display_power(bool active)
 
       IN.graph_Watt = IN.PEAKpowerFWD;
 
-      /// float graph_limit_swr = ((graph_maxSwr - 1) / 100.00);
       float in_swr_forgraph = IN.SWR - 1;
       IN.graphSWR = in_swr_forgraph;
 
@@ -1165,8 +1160,6 @@ void display_power(bool active)
       IN.graph_Watt = 0;
       IN.swr_display = 10;
       IN.graphSWR = 0;
-
-      Eff = 0;
 
       update_display();
 
@@ -1388,67 +1381,52 @@ void display_error()
     case 1:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er8.val", 1);
-      myNex.writeStr("home.er.txt", "External Protection Detected (H), correct fault then clear alarm from menu");
+      myNex.writeStr("home.er.txt", "External Protection Detected (H), correct fault then restart from menu");
 
       break;
     case 2:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er1.val", 1);
-      myNex.writeStr("home.er.txt", "ANT SWR high (H), correct fault then clear alarm from menu");
+      myNex.writeStr("home.er.txt", "ANT SWR high (H), correct fault then restart from menu");
 
       break;
     case 3:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er7.val", 1);
-      myNex.writeStr("home.er.txt", "High INPUT power (H), correct fault then clear alarm from menu");
+      myNex.writeStr("home.er.txt", "High INPUT power (H), correct fault then restart from menu");
 
       break;
     case 4:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er2.val", 1);
-      myNex.writeStr("home.er.txt", "LPF SWR High (H), correct fault then clear alarm from menu");
+      myNex.writeStr("home.er.txt", "LPF SWR High (H), correct fault then restart from menu");
 
       break;
     case 5:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er3.val", 1);
-      myNex.writeStr("home.er.txt", "High Temperature (S), correct fault then clear alarm from menu");
+      myNex.writeStr("home.er.txt", "High Temperature (S), correct fault then restart from menu");
 
       break;
     case 6:
       myNex.writeNum("home.ER.val", 1);
       myNex.writeNum("home.er6.val", 1);
-      myNex.writeStr("home.er.txt", "High OUTPUT power (S), correct fault then clear alarm from menu");
+      myNex.writeStr("home.er.txt", "High OUTPUT power (S), correct fault then restart from menu");
 
       break;
     case 7:
-      myNex.writeNum("home.ER.val", 1);
-      myNex.writeNum("home.er1.val", 1);
-      myNex.writeStr("home.er.txt", "High SWR (S), correct fault then clear alarm from menu");
 
       break;
     case 8:
-      myNex.writeNum("home.ER.val", 1);
-      myNex.writeNum("home.er2.val", 1);
-      myNex.writeStr("home.er.txt", "LPF mismatch (S), correct fault then clear alarm from menu");
 
       break;
     case 9:
-      myNex.writeNum("home.ER.val", 1);
-      myNex.writeNum("home.er6.val", 1);
-      myNex.writeStr("home.er.txt", "LPF OUTPUT high (S), correct fault then clear alarm from menu");
 
       break;
     case 10:
-      myNex.writeNum("home.ER.val", 1);
-      myNex.writeNum("home.er2.val", 1);
-      myNex.writeStr("home.er.txt", "LPF SWR high (S), correct fault then clear alarm from menu");
 
       break;
     case 11:
-      myNex.writeNum("home.ER.val", 1);
-      myNex.writeNum("home.er7.val", 1);
-      myNex.writeStr("home.er.txt", "High INPUT power (S), correct fault then clear alarm from menu");
 
       break;
     }
@@ -1463,6 +1441,7 @@ void display_ID()
 
   if ((millis() - last_ID_Refresh) >= ID_Refresh && lastI != I)
   {
+
     myNex.writeNum("x4.val", I);
     last_ID_Refresh = millis();
     lastI = I;
@@ -1472,17 +1451,17 @@ void display_ID()
 /* === Set FAN speed according to temp and display === */
 void fanspeed()
 {
-  if (temp_digi1 < 25.0)
+  if (temp_max < 25.0)
+    PWM = 10;
+  else if (temp_max > 25.0 && temp_max < 30.0)
     PWM = 20;
-  else if (temp_digi1 > 25.0 && temp_digi1 < 30.0)
-    PWM = 40;
-  else if (temp_digi1 > 30.0 && temp_digi1 < 40.0)
+  else if (temp_max > 30.0 && temp_max < 40.0)
+    PWM = 30;
+  else if (temp_max >= 40.0 && temp_max < 45.0)
     PWM = 60;
-  else if (temp_digi1 >= 40.0 && temp_digi1 < 45.0)
-    PWM = 70;
-  else if (temp_digi1 >= 45.0 && temp_digi1 < 50.0)
+  else if (temp_max >= 45.0 && temp_max < 50.0)
     PWM = 80;
-  else if (temp_digi1 >= 50.0)
+  else if (temp_max >= 50.0)
     PWM = 100;
 
   // only update data when PWM value change
@@ -1500,14 +1479,22 @@ void fanspeed()
 /* === Tempareturn Monitor  === */
 void read_temp()
 {
-  if (millis() - last_Temp_Refresh >= Temp_Refresh)
+  if (millis() - last_Temp_Refresh >= (Temp_Refresh + 5))
   {
+    temp_max = 0.0;
     sensors.requestTemperatures();
-    if (dtemp1_status == 1)
+    if (dtemp1_status)
     {
       temp_digi1 = sensors.getTempCByIndex(0);
+      temp_max = temp_digi1;
+      // Serial.print("T: ");
+      // Serial.println(temp_digi1);
       if (dtemp2_status)
+      {
         temp_digi2 = sensors.getTempCByIndex(1);
+        if (temp_digi2 > temp_max)
+          temp_max = temp_digi2;
+      }
       else
         temp_digi2 = 0.0;
     }
@@ -1517,12 +1504,20 @@ void read_temp()
       temp_digi2 = 0.0;
     }
 
-    if (ntc1_status == 1)
+    if (ntc1_status)
+    {
       read_ntc1();
+      if (temp_ntc1 > temp_max)
+        temp_max = temp_ntc1;
+    }
     else
       temp_ntc1 = 0.0;
     if (ntc2_status)
+    {
       read_ntc2();
+      if (temp_ntc2 > temp_max)
+        temp_max = temp_ntc2;
+    }
     else
       temp_ntc2 = 0.0;
     last_Temp_Refresh = millis();
@@ -1536,29 +1531,29 @@ void read_temp()
 
   if ((millis() - last_Display_Refresh) >= Display_Refresh)
   {
-    float graph_limit = (graph_maxTemp / 100.00);
+    float graph_limit_temp = (graph_maxTemp / 100.00);
 
     int Tdisplay1 = (temp_ntc1 * 10) + 0.5; // Float x 10 and convert to int with rounding
-    graph_Temp1 = (temp_ntc1 / graph_limit);
+    graph_Temp1 = (temp_ntc1 / graph_limit_temp);
 
     int Tdisplay2 = (temp_ntc2 * 10) + 0.5; // Float x 10 and convert to int with rounding
-    graph_Temp2 = (temp_ntc2 / graph_limit);
+    graph_Temp2 = (temp_ntc2 / graph_limit_temp);
 
     int Tdisplay3 = (temp_digi1 * 10) + 0.5; // Float x 10 and convert to int with rounding
-    graph_Temp3 = (temp_digi1 / graph_limit);
+    graph_Temp3 = (temp_digi1 / graph_limit_temp);
 
     int Tdisplay4 = (temp_digi2 * 10) + 0.5; // Float x 10 and convert to int with rounding
-    graph_Temp4 = (temp_digi2 / graph_limit);
+    graph_Temp4 = (temp_digi2 / graph_limit_temp);
 
     if (display_page == 2)
     {
-      myNex.writeNum("tn1.val", Tdisplay1);  // n8-9-10-11
-      myNex.writeNum("j4.val", graph_Temp1); // j4-7
-      myNex.writeNum("tn2.val", Tdisplay2);  // n8-9-10-11
-      myNex.writeNum("j5.val", graph_Temp2); // j4-7
-      myNex.writeNum("tn3.val", Tdisplay3);  // n8-9-10-11
+      myNex.writeNum("tn1.val", Tdisplay1);
+      myNex.writeNum("j4.val", graph_Temp1);
+      myNex.writeNum("tn2.val", Tdisplay2);
+      myNex.writeNum("j5.val", graph_Temp2);
+      myNex.writeNum("tn3.val", Tdisplay3);
       myNex.writeNum("j6.val", graph_Temp3);
-      myNex.writeNum("tn4.val", Tdisplay4); // n8-9-10-11
+      myNex.writeNum("tn4.val", Tdisplay4);
       myNex.writeNum("j7.val", graph_Temp4);
     }
     else if (display_page == 4)
@@ -1919,13 +1914,16 @@ void trigger9() // Loading variables data to Setting page
   myNex.writeNum("st3.val", protection_po);
   myNex.writeNum("st4.val", protection_vdd);
   myNex.writeNum("st5.val", protection_id);
-  myNex.writeNum("stx0.val", protection_swr_mem);
-  myNex.writeNum("st6.val", protection_in);
+
+  myNex.writeNum("sc9.val", ant_prot_enable);
+  myNex.writeNum("sc10.val", lpf_prot_enable);
+  myNex.writeNum("sc11.val", in_prot_enable);
+  myNex.writeNum("sc12.val", ext_prot_lowActive);
 
   display_page = 5;
 }
 
-void trigger10() // updating variables data from Setting page and EEPROM
+void trigger10() // updating variables data from Setting page and write to EEPROM
 {                // x0A
 
   ANT.maxGraphWatt = myNex.readNumber("st0.val");
@@ -1952,12 +1950,15 @@ void trigger10() // updating variables data from Setting page and EEPROM
   protection_po = myNex.readNumber("st3.val");
   protection_vdd = myNex.readNumber("st4.val");
   protection_id = myNex.readNumber("st5.val");
-  protection_swr_mem = myNex.readNumber("stx0.val");
-  protection_in = myNex.readNumber("st6.val");
-  protection_swr = (float)protection_swr_mem / 10.0;
+
+  ant_prot_enable = myNex.readNumber("sc9.val");
+  lpf_prot_enable = myNex.readNumber("sc10.val");
+  in_prot_enable = myNex.readNumber("sc11.val");
+  ext_prot_lowActive = myNex.readNumber("sc12.val");
+
   saveEEPROM();
   myNex.writeNum("settings.t9.pco", 2016);
-  myNex.writeStr("settings.t9.txt", "SETTINGS SAVED");
+  myNex.writeStr("settings.t9.txt", "SETTINGS SAVED, PLEASE RESTART SSPA");
   display_page = 5;
 }
 
@@ -2001,10 +2002,6 @@ void trigger11()
 
   touch_status = true;
   display_page = 2;
-  // Serial.print("Band Mode:");
-  // Serial.println(band_mode);
-  // Serial.print("BCD status:");
-  // Serial.println(bcdband_status);
 }
 
 void trigger12()
@@ -2155,6 +2152,8 @@ void trigger22()
   IN.calibration = CalibV_in * CalibV_in;
   IN.calibration = IN.calibration / measured_power_in;
   saveEEPROM();
+  delay(1000);
+  myNex.writeStr("calibP.t18.txt", "CALIBRATION SAVED");
 }
 
 // APPLY Power out calibration
@@ -2167,15 +2166,23 @@ void trigger23()
   ANT.calibration = CalibV_out * CalibV_out;
   ANT.calibration = ANT.calibration / measured_power_out;
   saveEEPROM();
+  delay(1000);
+  myNex.writeStr("calibP.t17.txt", "CALIBRATION SAVED");
 }
 
 // APPLY ID calibration
 void trigger24()
 {
   // x18
+
   calibration_ID = myNex.readNumber("mcn5.val");
+  peak_ID = myNex.readNumber("mcn6.val");
   calibration_ID = calibration_ID / peak_ID;
+  Serial.print("calibration_ID: ");
+  Serial.println(calibration_ID);
   saveEEPROM();
+  delay(1000);
+  myNex.writeStr("calibP.t20.txt", "CALIBRATION SAVED");
 }
 
 // Load Meter Calibration page
@@ -2224,11 +2231,11 @@ void default_write()
   graph_maxWatt = 1000;
   graph_maxTemp = 100;
   protection_po = 1000;
-  protection_swr = 3.0;
+
   protection_temp = 55;
   T_pepHOLD = 250;
   PWM_FREQ_KHZ = 25;
-  protection_in = 60;
+
   protection_vdd = 55;
   protection_id = 20;
   band_mode = 1;
@@ -2256,6 +2263,11 @@ void default_write()
   vband_status = 0;
   bcdband_status = 0;
   rotband_status = 0;
+
+  ant_prot_enable = 0;
+  lpf_prot_enable = 0;
+  in_prot_enable = 0;
+  ext_prot_lowActive = 0;
 
   saveEEPROM();
   default_value = 21;
@@ -2393,11 +2405,20 @@ void alarm_clear()
 
   alarm_code = 0;
   // display_error();
+  if (hard_reset)
+  {
+    myNex.writeStr("menu.status.txt", "EXTERNAL PROTECTION RESETTING");
+    digitalWrite(Relay_1, HIGH);
+  }
   myNex.writeNum("home.ER.val", 0);
-  myNex.writeStr("vis b6,0");
-  myNex.writeStr("vis t5,0");
-  delay(500);
+  delay(2000);
+  if (hard_reset)
+  {
+    digitalWrite(Relay_1, LOW);
+  }
   display_error();
+  myNex.writeStr("menu.status.txt", "CONTROLLER CORE RESETTING");
+  delay(1000);
   SCB_AIRCR = 0x05FA0004; // reboot controller core.
 }
 
@@ -2569,8 +2590,10 @@ void tx_sequence()
 {
   if (PTT_status && alarm_code == 0 && TX_Enable)
   {
-    digitalWriteFast(BIAS_ON, HIGH);
     digitalWriteFast(ANT_RXTX, HIGH);
+    delay(BIAS_DELAY);
+    digitalWriteFast(BIAS_ON, HIGH);
+    delay(RFIN_DELAY);
     digitalWriteFast(RF_IN, HIGH);
     BIAS_ON_status = HIGH;
     ANT_RXTX_status = HIGH;
@@ -2579,7 +2602,9 @@ void tx_sequence()
   else
   {
     digitalWriteFast(RF_IN, LOW);
+    delay(BIAS_DELAY);
     digitalWriteFast(BIAS_ON, LOW);
+    delay(100);
     digitalWriteFast(ANT_RXTX, LOW);
     RF_IN_status = LOW;
     BIAS_ON_status = LOW;
@@ -2892,27 +2917,34 @@ void setup()
   analogWriteFrequency(FAN_1, PWM_FREQ_KHZ * 1000); // Teensy pin changes to 25 kHz
   analogWriteFrequency(FAN_2, PWM_FREQ_KHZ * 1000); // Teensy pin changes to 25 kHz
 
+  // Load variable values and setting parameters from EEPROM
+  loadEEPROM();
+
   // TEENSY INTARRUPT
 
   // Attach inturupt for external protection detection
   pinMode(INT_PROT, INPUT_PULLUP);
   delay(100);
-  attachInterrupt(digitalPinToInterrupt(INT_PROT), int_extprot, FALLING);
+  if (ext_prot_enable == 1)
+    attachInterrupt(digitalPinToInterrupt(INT_PROT), int_extprot, FALLING);
 
   // Attach inturupt for high swr
   pinMode(INT_ANT, INPUT_PULLUP);
   delay(100);
-  attachInterrupt(digitalPinToInterrupt(INT_ANT), int_antswr, RISING);
+  if (ant_prot_enable == 1)
+    attachInterrupt(digitalPinToInterrupt(INT_ANT), int_antswr, RISING);
 
   // Attach inturupt for high input
   pinMode(INT_IN, INPUT_PULLUP);
   delay(100);
-  attachInterrupt(digitalPinToInterrupt(INT_IN), int_inpo, RISING);
+  if (in_prot_enable == 1)
+    attachInterrupt(digitalPinToInterrupt(INT_IN), int_inpo, RISING);
 
   // Attach inturupt for high LPF swr error
   pinMode(INT_LPF, INPUT_PULLUP);
   delay(100);
-  attachInterrupt(digitalPinToInterrupt(INT_LPF), int_lpfswr, RISING);
+  if (lpf_prot_enable == 1)
+    attachInterrupt(digitalPinToInterrupt(INT_LPF), int_lpfswr, RISING);
 
   // Attach inturupt for PTT
   pinMode(PTT_SENSE, INPUT_PULLUP);
@@ -2949,7 +2981,7 @@ void setup()
   pinMode(ANT2, OUTPUT);
   pinMode(Relay_1, OUTPUT);
   pinMode(PROT_OUT, OUTPUT);
-  pinMode(BIAS_ON, OUTPUT);
+  // pinMode(BIAS_ON, OUTPUT);
 
   IOMUXC_SW_PAD_CTL_PAD_GPIO_B1_13 |= IOMUXC_PAD_SPEED(1) | IOMUXC_PAD_DSE(4) | IOMUXC_PAD_SRE; // 34
   IOMUXC_SW_PAD_CTL_PAD_GPIO_B1_02 |= IOMUXC_PAD_SPEED(1) | IOMUXC_PAD_DSE(4) | IOMUXC_PAD_SRE; // 36
@@ -2963,9 +2995,6 @@ void setup()
   if (default_value != 21)
     default_write();
   // default_write();
-
-  // Load variable values and setting parameters from EEPROM
-  loadEEPROM();
 
   // Start CAT
   Serial2.begin(CATbaud);
@@ -2992,6 +3021,8 @@ void setup()
   trigger11();
   myNex.writeStr("Er1.txt", "");
   // Serial.println("*** SETUP END ***");
+  myNex.writeStr("splash.coreV.txt", coreV);
+  myNex.writeStr("splash.remoteV.txt", remoteV);
 
   ANT.maxgraphSWR = 3;
 
@@ -3012,6 +3043,7 @@ void setup()
   fanspeed();
   RIGprofile(); // Load Radio CAT profile
   CAT_ReqQRG(); // Request radio to send frequency
+  myNex.writeStr("menu.status.txt", "READY");
 }
 
 void loop()
@@ -3037,7 +3069,7 @@ void loop()
 
       else
       {
-        // Serial.println("*** HOME ALARM RUN ***");
+        Serial.println("*** HOME ALARM RUN ***");
         homepage_alarmrun();
       }
     }

@@ -12,8 +12,8 @@
 #define CAT_TX 8
 #define GPIO_O9 9
 #define ANT2 10
-#define ANT_RXTX 11
-#define RF_IN 12
+const int ANT_RXTX = 11;
+const int RF_IN = 12;
 #define GPIO_13 13
 #define IN_REF A0
 #define IN_FWD A1
@@ -26,22 +26,20 @@
 #define FAN_1 22
 #define FAN_2 23
 
-//#define I2C_SCL 24
-//#define I2C_SDA 25
-#define PTT_SENSE 26
-#define INT_PROT 27
+
+const int  PTT_SENSE = 26;
+const int  INT_PROT = 27;
 #define ESP_TX 28
 #define ESP_RX 29
 #define CAN_RX 30
 #define CAN_TX 31
 #define Relay_1 32
-#define PROT_OUT 33
-//#define BIAS_ON 34
+const int  PROT_OUT = 33;
+
 const int BIAS_ON = 34;
-#define INT_ANT 35
-//#define INT_IN 36
+const int  INT_ANT = 35;
 const int INT_IN = 36;
-#define INT_LPF 37
+const int INT_LPF = 37;
 #define ANT_REF A14
 #define ANT_FWD A15
 #define LPF_REF A16
