@@ -1,5 +1,5 @@
 
-/*  Arduino Code (Version 3.0.3) for S21RC SSPA Controller REV3.0.2 PCB.                    */
+/*  Arduino Code (Version 3.0.4) for S21RC SSPA Controller REV3.0.2 PCB.                    */
 /*                                                                                          */
 /*  Created by Fazlay Rabby S21RC, JUNE, 2023.                                              */
 /*                                                                                          */
@@ -10,10 +10,10 @@
 /*  If you need any clarification or help please issue a ticket in github.                  */
 /*                                                                                          */
 
-/* For PCB Version REV3.0.2, CODE V 3.0.3, Display: Nextion 800x480 (5 and 7 inch)          */
+/* For PCB Version REV3.0.2, CODE V 3.0.4, Display: Nextion 800x480 (5 and 7 inch)          */
 
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-/* THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS. LAST UPDATE:  21 MARCH 2024  */
+/* THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS. LAST UPDATE:  11 APR 2024  */
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
 #include "Arduino.h"
@@ -26,19 +26,15 @@
 #include <MCP23008.h>           //https://registry.platformio.org/libraries/robtillaart/MCP23008
 #include <pinout.h>
 
-String coreV = "3.0.3";
+String coreV = "3.0.4";
 String remoteV = "0.0.0";
-
+ 
 int BIAS_DELAY = 35; // ANT TX/RX relay takes approx 15ms+15ms to energize, depends on relay
 int RFIN_DELAY = 0;
 
 /*==== EXTERNAL PROTECTION BOARD HARD RESET ====== */
 bool hard_reset = true; // make true to enable hard reset. use Relay-1 (RL-1)
 
-/* =============DEBUG PURPOSE ==============*/
-/* Enable one by one once the PA is working */
-
-uint8_t ext_prot_enable = 0;
 uint8_t ant_prot_enable = 0;
 uint8_t lpf_prot_enable = 0;
 uint8_t in_prot_enable = 0;
@@ -2925,7 +2921,7 @@ void setup()
   // Attach inturupt for external protection detection
   pinMode(INT_PROT, INPUT_PULLUP);
   delay(100);
-  if (ext_prot_enable == 1)
+  if (ext_prot_lowActive == 1)
     attachInterrupt(digitalPinToInterrupt(INT_PROT), int_extprot, FALLING);
 
   // Attach inturupt for high swr
