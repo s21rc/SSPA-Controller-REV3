@@ -3,9 +3,10 @@
 /*                                                                                          */
 /*  Created by Fazlay Rabby S21RC, JUNE, 2023.                                              */
 /*                                                                                          */
-/*  RELEASED AS OPEN SOURSE UNDER MIT LICENSE                                               */
+/*  RELEASED AS OPEN SOURSE UNDER GNU GPL3 LICENSE                                          */
 /*  Feel free to use/change the Gerber file for the PCB,                                    */
-/*  display file(nextion TFT) for the display and all codes here.                           */
+/*  display file(nextion TFT) for the display and all codes here.
+*/  Please check the license agreement before thinking of Commercial implimentation.
 /*                                                                                          */
 /*  If you need any clarification or help please issue a ticket in github.                  */
 /*                                                                                          */
@@ -13,7 +14,7 @@
 /* For PCB Version REV3.0.2, CODE V 3.0.4, Display: Nextion 800x480 (5 and 7 inch)          */
 
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-/* THE CODE IS STILL IN TESTING PHASE, WORK IN PROGRESS. LAST UPDATE:  11 APR 2024  */
+/* WORK IN PROGRESS for extra features, THIS IS AN USABLE RELEASE. LAST UPDATE:  11 APR 2024  */
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
 #include "Arduino.h"
