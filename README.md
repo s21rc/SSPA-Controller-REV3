@@ -27,7 +27,7 @@ Display: HMI is provided, use Nextion Editor to compile and upload. TFT files ar
 
 ![Rev 3.0.1 Hardware](./rev3.0.1.jpg)
 
-![Main Display](./main_display.PNG)
+![Main Display](./display_files/main_display.PNG)
 ![Menu Page](./menu.PNG)
 ![Main Settings Page](./settings.PNG)
 ![Meter Calibration Page](./meter_calibration.PNG)
